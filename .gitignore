@@ -1,0 +1,39 @@
+# ── Ce qui se reconstruit ne se versionne pas ────────────────────────────
+build/
+*.o
+*.elf
+*.bin
+
+# ── Le banc d'essai ──────────────────────────────────────────────────────
+# 853 Mo de captures : images, sons et vidages de sauvegarde produits par
+# outils/banc. Ce sont des MESURES, pas des sources — elles se refont en une
+# commande. Le programme du banc, lui, se recompile.
+outils/banc/*.ppm
+outils/banc/*.png
+outils/banc/*.wav
+outils/banc/*.sram
+outils/banc/banc
+
+# ── Le comparateur ymfm ──────────────────────────────────────────────────
+outils/comparateur/comparateur
+outils/comparateur/trace_ds
+outils/comparateur/*.o
+outils/comparateur/*.wav
+outils/comparateur/*.txt
+
+.DS_Store
+__pycache__/
+*.pyc
+*.ram
+
+# ── Ce que « verser » régénère ───────────────────────────────────────────
+# Ces fichiers sont la sortie de outils/bibliotheque.py, pas des sources : ils
+# se refont à partir des .mdm de morceaux/. banque_pcm.c pèse un mégaoctet de
+# données d'échantillons écrites en texte C — le versionner ferait grossir le
+# dépôt à chaque changement de banque, pour rien.
+#   python3 outils/bibliotheque.py verser morceaux/TUTU.MDM
+source/banque_pcm.c
+source/banque_pcm.h
+source/morceaux_rom.c
+source/morceaux_rom.h
+source/pilote_pcm.h
