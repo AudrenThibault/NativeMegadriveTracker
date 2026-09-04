@@ -382,6 +382,13 @@ static int dans_selection(int col, int lig) {
 // Où en est la lecture, par page. -1 quand rien ne joue.
 static int lu_song[MD_CANAUX], lu_chain = -1, lu_phrase = -1;
 static int lu_song_prec[MD_CANAUX], lu_chain_prec = -1, lu_phrase_prec = -1;
+// Les CINQ repères de la page TABLE : un par groupe de colonnes, chacun sur
+// la ligne que son flux est en train de lire. Repris du projet DS — une table
+// a trois curseurs, et les montrer est le seul moyen de voir qu'un H boucle.
+//   groupe   0 VOL   1 TSP   2 CMD1   3 CMD2   4 MD CMD
+static const uint8_t TAB_CHEV_COL[5] = { 3, 7, 11, 16, 21 };
+static const uint8_t TAB_CHEV_FLUX[5] = { 0, 1,  1,  2,  2 };
+static int lu_table_prec[5] = { -2, -2, -2, -2, -2 };
 
 // ============================================================================
 //  Page SONG
@@ -906,6 +913,9 @@ static void table_dessine(void) {
     md_ecran_hex(1, 3 + l, ton_ligne(l), (uint32_t)l, 1);
     table_case(l);
   }
+  // La page vient d'être repeinte : les repères de lecture ont disparu avec
+  // elle, il faut que suit_lecture les repose au lieu de les croire en place.
+  for (int g = 0; g < 5; g++) lu_table_prec[g] = -2;
 }
 
 // ============================================================================
@@ -1564,6 +1574,21 @@ static void suit_lecture(void) {
       if (lu_phrase_prec >= 0) md_ecran_car(0, LIG_PREMIERE + lu_phrase_prec, MD_DATA, ' ');
       if (l >= 0)              md_ecran_car(0, LIG_PREMIERE + l, MD_ACCENT, '>');
       lu_phrase = l; lu_phrase_prec = l;
+    }
+  } else if (page == PAGE_TABLE) {
+    // ⚠️ On ne touche QUE les repères qui ont bougé. Les repeindre tous à
+    // chaque image ferait scintiller la page — la même faute que sur SONG.
+    const int montre = (md_lecture_en_cours()
+                        && md_lecture_table(voie_courante) == table_id);
+    for (int g = 0; g < 5; g++) {
+      const int r = montre
+          ? md_lecture_table_pos(voie_courante, TAB_CHEV_FLUX[g]) : -1;
+      if (r == lu_table_prec[g]) continue;
+      if (lu_table_prec[g] >= 0 && lu_table_prec[g] < MD_LIGNES_TABLE)
+        md_ecran_car(TAB_CHEV_COL[g], 3 + lu_table_prec[g], MD_DATA, ' ');
+      if (r >= 0 && r < MD_LIGNES_TABLE)
+        md_ecran_car(TAB_CHEV_COL[g], 3 + r, MD_ACCENT, '>');
+      lu_table_prec[g] = r;
     }
   }
 }

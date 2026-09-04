@@ -81,4 +81,10 @@ int md_lecture_ligne_phrase(int canal);  // ligne dans cette phrase, -1 si rien
 int md_lecture_chain(int canal);
 int md_lecture_ligne_chain(int canal);
 
+// La table que déroule la voie, et la ligne que lit chacun de ses trois flux
+// (0 = VOL, 1 = TSP et première CMD, 2 = seconde CMD et colonne MD). -1 quand
+// il n'y a rien à montrer.
+int md_lecture_table(int canal);
+int md_lecture_table_pos(int canal, int flux);
+
 #endif

@@ -54,3 +54,6 @@ release/
 # Notes de travail : personnelles, pas de la documentation publique.
 LISEZMOI.md
 TRANSFERT.md
+
+# La sortie compilee du banc d essai des tables.
+outils/essais/tables

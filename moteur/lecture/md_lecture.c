@@ -19,7 +19,20 @@ typedef struct {
   // phrase : c'est ce qui permet un arpège plus rapide que le tempo. Elle
   // reboucle tant que la note dure.
   uint8_t  table;          // MD_VIDE = aucune
-  uint8_t  table_pas;
+  // ⚠️ TROIS FLUX, CHACUN SA POSITION — la règle vient du projet DS, où une
+  // table a trois curseurs qui avancent pour leur compte :
+  //     0  la colonne VOL
+  //     1  la colonne TSP et la première CMD
+  //     2  la seconde CMD, et la colonne MD CMD qui voyage avec elle
+  // C'est ce qui permet à un H de faire boucler la transposition pendant que
+  // la seconde commande continue de descendre. Un curseur unique, comme
+  // ici jusqu'ici, ne pouvait pas boucler sur une partie de la table sans
+  // emmener tout le reste avec lui.
+  uint8_t  table_pas[3];
+  // Combien de tours chaque ligne portant un H a déjà faits. Le compteur est
+  // indexé par LA LIGNE QUI PORTE LE H, pas par le flux : c'est ce qui permet
+  // d'imbriquer deux boucles sans qu'elles se marchent dessus.
+  uint8_t  hop_faits[3][MD_LIGNES_TABLE];
   uint8_t  vol;            // le volume de la ligne, avant la table
 
   // ── LES TROIS MACROS PSG ──────────────────────────────────────────────
@@ -79,6 +92,50 @@ typedef struct {
 } voie_t;
 
 static voie_t voies[MD_CANAUX];
+
+// L'adresse d'une ligne de table dans le morceau.
+static uint32_t table_base(uint8_t tab, int lig) {
+  return MD_OFF_TABLES
+       + ((uint32_t)tab * MD_LIGNES_TABLE + (uint32_t)lig) * MD_TABLE_OCTETS;
+}
+
+static void table_remet_a_zero(voie_t *v) {
+  for (int s = 0; s < 3; s++) {
+    v->table_pas[s] = 0;
+    for (int l = 0; l < MD_LIGNES_TABLE; l++) v->hop_faits[s][l] = 0;
+  }
+}
+
+// ── H, LE SAUT DE TABLE ───────────────────────────────────────────────────
+// Le premier chiffre dit combien de fois sauter avant de passer outre, ZÉRO
+// voulant dire « à l'infini » ; le second dit la ligne visée. C'est ce qui
+// fait boucler une table sur ses trois premières lignes au lieu de dérouler
+// les seize. Repris du projet DS (md_table_resolve_hops), y compris sa garde :
+// une table entièrement remplie de H tournerait sinon sans fin dans ce tick.
+//
+// ⚠️ LE FLUX DU VOLUME N'EN TIENT PAS COMPTE, comme sur la DS. Le H vit dans
+// une colonne CMD, et le volume n'en a pas : lui faire suivre le saut de la
+// colonne d'à côté reviendrait à lui inventer une commande.
+static void hop_resout(voie_t *v, int s) {
+  if (s == 0 || v->table >= MD_MAX_TABLES) return;
+  for (int garde = 0; garde <= MD_LIGNES_TABLE; garde++) {
+    const int lig = v->table_pas[s] & (MD_LIGNES_TABLE - 1);
+    const uint32_t b = table_base(v->table, lig);
+    const uint8_t cmd = md_lit(b + (uint32_t)(s == 1 ? 2 : 4));
+    const uint8_t val = md_lit(b + (uint32_t)(s == 1 ? 3 : 5));
+    if (cmd == MD_VIDE || md_cmd_lettre(cmd) != 'H') return;
+    const int fois = (val >> 4) & 15, but = val & 15;
+    if (fois == 0) {
+      v->table_pas[s] = (uint8_t)but;
+    } else if (v->hop_faits[s][lig] < fois) {
+      v->hop_faits[s][lig]++;
+      v->table_pas[s] = (uint8_t)but;
+    } else {
+      v->hop_faits[s][lig] = 0;   // boucle finie : on passe à la suite
+      v->table_pas[s] = (uint8_t)((lig + 1) & (MD_LIGNES_TABLE - 1));
+    }
+  }
+}
 
 // ── LES VOIES COUPÉES ─────────────────────────────────────────────────────
 // Une voie coupée avance quand même dans le morceau — elle ne SONNE pas. Sans
@@ -297,6 +354,20 @@ int md_lecture_ligne_song(int canal) {
 }
 int md_lecture_phrase(int c) {
   return (c >= 0 && c < MD_CANAUX && voies[c].actif) ? voies[c].phrase : -1;
+}
+
+// Quelle table cette voie déroule, et où en est chacun de ses trois flux.
+// C'est ce qui permet à la page TABLE de montrer sa lecture — sans quoi on
+// pose un H et rien à l'écran ne dit s'il agit.
+int md_lecture_table(int c) {
+  if (c < 0 || c >= MD_CANAUX || !voies[c].actif) return -1;
+  return (voies[c].table < MD_MAX_TABLES) ? voies[c].table : -1;
+}
+int md_lecture_table_pos(int c, int flux) {
+  if (c < 0 || c >= MD_CANAUX || flux < 0 || flux > 2) return -1;
+  const voie_t *v = &voies[c];
+  if (!v->actif || !v->note || v->table >= MD_MAX_TABLES) return -1;
+  return v->table_pas[flux] & (MD_LIGNES_TABLE - 1);
 }
 int md_lecture_ligne_phrase(int c) {
   return (c >= 0 && c < MD_CANAUX && voies[c].actif) ? voies[c].phrase_ligne : -1;
@@ -596,7 +667,7 @@ static void arme_commande(int c, const md_ligne_phrase *r) {
       }
       return;
     case 'A':   // attacher une table à la voie, pour cette note
-      if (val < MD_MAX_TABLES) { v->table = val; v->table_pas = 0; }
+      if (val < MD_MAX_TABLES) { v->table = val; table_remet_a_zero(v); }
       return;
     case 'K':   // coupure après tant de ticks
       v->coupe = val ? val : 1;
@@ -632,7 +703,7 @@ static void joue_note(int c, const md_ligne_phrase *pr) {
   // La table de l'instrument repart de son premier pas à chaque note : c'est
   // ce qui rend un arpège reproductible d'une note à l'autre.
   v->table = md_lit(base + 59);
-  v->table_pas = 0;
+  table_remet_a_zero(v);
   // Les macros repartent de leur premier pas, comme la table : une macro qui
   // reprendrait où elle s'est arrêtée donnerait une attaque différente à
   // chaque note.
@@ -835,11 +906,10 @@ static void table_pas(int c) {
 
   uint8_t vol = 0; int8_t tsp = 0;
   if (a_table) {
-    const uint32_t b = MD_OFF_TABLES
-                     + ((uint32_t)v->table * MD_LIGNES_TABLE
-                        + v->table_pas) * MD_TABLE_OCTETS;
-    vol = md_lit(b + 0);
-    tsp = (int8_t)md_lit(b + 1);
+    // Les sauts d'abord : ils disent QUELLE ligne chaque flux va lire.
+    for (int s = 0; s < 3; s++) hop_resout(v, s);
+    vol =         md_lit(table_base(v->table, v->table_pas[0]) + 0);
+    tsp = (int8_t)md_lit(table_base(v->table, v->table_pas[1]) + 1);
   }
 
   // L'arpège de la macro et la transposition de la table S'AJOUTENT ; le
@@ -879,10 +949,9 @@ static void table_pas(int c) {
     md_fm_frequence(c, (uint8_t)n);
   }
 
-  if (a_table) {
-    v->table_pas++;
-    if (v->table_pas >= MD_LIGNES_TABLE) v->table_pas = 0;
-  }
+  if (a_table)
+    for (int s = 0; s < 3; s++)
+      v->table_pas[s] = (uint8_t)((v->table_pas[s] + 1) & (MD_LIGNES_TABLE - 1));
 }
 
 // ── OU EN EST LA LECTURE, POUR LE FIL D'ARIANE ────────────────────────────
