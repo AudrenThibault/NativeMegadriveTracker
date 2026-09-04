@@ -31,7 +31,7 @@ rebâtit la ROM. Sans ça un morceau jouerait les sons d'un autre.
 Le seul contrat entre les deux projets est le FORMAT `.mdm`. Cet outil vit du
 côté Mega Drive et ne touche pas au projet DS.
 """
-import os, subprocess, sys, struct
+import os, shutil, subprocess, sys, struct
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mdm2sram, sram2mdm
@@ -600,6 +600,19 @@ def cmd_vierge(sources=()):
             print("  " + l.strip())
     if r.returncode:
         raise SystemExit("la ROM n'a pas ete construite")
+    # ⚠️ ON DEPOSE LA ROM DANS release/ ICI, PAS A LA MAIN. Deux fois de suite
+    # un correctif a ete construit sans que release/ soit refait, et la ROM
+    # d'essai portait le nouveau code pendant que celle de publication gardait
+    # l'ancien : on a cherche un defaut dans du code deja corrige. Le seul
+    # remede est que la commande qui fabrique la ROM de publication soit aussi
+    # celle qui la range.
+    src = os.path.join(racine, 'geneTracker.bin')
+    dst_d = os.path.join(racine, 'release')
+    os.makedirs(dst_d, exist_ok=True)
+    dst = os.path.join(dst_d, 'GeneTrackerMD-v0.1.0.bin')
+    if os.path.exists(src):
+        shutil.copyfile(src, dst)
+        print(f"  -> {os.path.relpath(dst, racine)}")
 
 def banque_de_la_rom():
     """Relit la banque compilée dans la ROM, pour la rendre au .mdm.
