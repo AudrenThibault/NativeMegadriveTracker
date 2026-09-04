@@ -42,3 +42,11 @@ source/pilote_pcm.h
 #   python3 outils/bibliotheque.py vierge
 # Le binaire publie vit sur la page Releases de GitHub, pas dans le depot.
 release/*.bin
+
+# Les morceaux et les images de sauvegarde restent PRIVES.
+morceaux/
+sauvegardes/
+source/morceau_demo.h
+release/
+*.mdm
+*.MDM
