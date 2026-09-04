@@ -51,114 +51,177 @@ static int rang_de(char lettre) {
   return -1;
 }
 
-int main(void) {
-  char temoin[2048], avec[2048];
-  pose_morceau(0);
-  trace(0, temoin);
-  printf("Temoin, note seule sur FM1 :\n  %s\n\n", temoin);
+// Une valeur qui a du SENS pour chaque commande. Un 0x24 uniforme ne prouvait
+// rien : il place un A hors table, un K au-dela de la ligne, un M a 4...
+// ⚠️ LA VALEUR VIENT DE L'EFFET, pas de la lettre : une lettre et un code MD
+// qui font la meme chose doivent etre eprouves de la meme facon. Un 0x24
+// uniforme ne prouvait rien — il coupait au-dela de la ligne, sautait a une
+// ligne de SONG vide, choisissait une table inexistante.
+static uint8_t valeur_pour(int e) {
+  switch (e) {
+    case MD_E_ARPEGE:     return 0x37;
+    case MD_E_PORTA_HAUT:
+    case MD_E_PORTA_BAS:  return 0x08;
+    case MD_E_PORTA_TON:  return 0x20;
+    case MD_E_VIBRATO:    return 0x44;
+    case MD_E_PORTA_VOL:  return 0x21;
+    case MD_E_VIB_VOL:    return 0x42;
+    case MD_E_TREMOLO:    return 0x44;
+    case MD_E_VOL_SLIDE:  return 0x02;
+    case MD_E_RETRIG:     return 0x02;
+    case MD_E_SAUT:       return 0x00;
+    case MD_E_RUPTURE:    return 0x00;
+    case MD_E_VIB_PROF:   return 0x03;
+    case MD_E_FINE:       return 0x0C;
+    case MD_E_COUPE:      return 0x03;
+    case MD_E_RETARD:     return 0x03;
+    case MD_E_TEMPO:      return 0x64;
+    case MD_E_VITESSE:    return 0x04;
+    case MD_E_VOL_GLOBAL: return 0x08;
+    case MD_E_PAN:        return 0x01;
+    case MD_E_TABLE:      return 0x01;   // l'AUTRE table, pas celle-ci
+    case MD_E_PITCH:      return 0x51;
+    case MD_E_HOP:        return 0x00;
+    default:              return 0x24;
+  }
+}
 
-  printf("%-4s %-20s %s\n", "CMD", "NOM", "EFFET");
-  printf("---- -------------------- --------------------------------------\n");
+// Pourquoi une case reste vide sans que ce soit un defaut.
+static const char *excuse(int e, int dans_table) {
+  if (!dans_table) {
+    if (e == MD_E_TEMPO || e == MD_E_VITESSE) return "reglage";
+    if (e == MD_E_VIB_PROF) return "reglage";
+    return 0;
+  }
+  if (e == MD_E_RETARD)  return "n/a";     // une table n'a pas de ligne
+  if (e == MD_E_HOP)     return "hop";     // hop_resout s'en charge
+  if (e == MD_E_VIB_PROF) return "reglage";
+  if (e == MD_E_PORTA_TON) return "sans cible";
+  return 0;
+}
+
+// Pose une table NEUTRE sur l'instrument 01 : seize lignes sans rien.
+static void pose_table_neutre(void) {
+  uint8_t *m = md_travail();
+  m[MD_OFF_INSTR + 59] = 0;
+  // La table 01 porte une transposition : sans ça, « choisir la table 01 »
+  // ne se distinguerait pas de rester sur la 00.
+  for (int l = 0; l < MD_LIGNES_TABLE; l++) {
+    const uint32_t b = MD_OFF_TABLES
+                     + ((uint32_t)MD_LIGNES_TABLE + (uint32_t)l) * MD_TABLE_OCTETS;
+    m[b + 0] = 0; m[b + 1] = 7;
+    m[b + 2] = MD_VIDE; m[b + 4] = MD_VIDE; m[b + 6] = MD_VIDE;
+  }
+  for (int l = 0; l < MD_LIGNES_TABLE; l++) {
+    const uint32_t b = MD_OFF_TABLES + (uint32_t)l * MD_TABLE_OCTETS;
+    m[b + 0] = 0; m[b + 1] = 0;
+    m[b + 2] = MD_VIDE; m[b + 3] = 0;
+    m[b + 4] = MD_VIDE; m[b + 5] = 0;
+    m[b + 6] = MD_VIDE; m[b + 7] = 0;
+  }
+}
+
+int main(void) {
+  char temoin[2048], temoinT[2048], avec[2048];
+
+  pose_morceau(0);                trace(0, temoin);
+  pose_morceau(0); pose_table_neutre(); trace(0, temoinT);
+
+  printf("TOUTES LES COMMANDES, DANS LES CINQ COLONNES\n");
+  printf("(agit = la puce recoit autre chose que sans la commande)\n\n");
+  printf("%-4s %-20s %-10s %-10s %-10s\n",
+         "CMD", "NOM", "PHRASE", "TABLE C1", "TABLE C2");
+  printf("---- -------------------- ---------- ---------- ----------\n");
+  int manquantes = 0;
   for (int r = 0; r < MD_CMD_NOMBRE; r++) {
     const char le = md_cmd_lettre(r);
-    // Une valeur qui a du sens pour la plupart : deux quartets non nuls.
+    const int e = md_cmd_effet(r);
+    const uint8_t val = valeur_pour(e);
+    int ok[3];
+
     pose_morceau(0);
     md_travail()[MD_OFF_PHRASES + 3] = (uint8_t)r;
-    md_travail()[MD_OFF_PHRASES + 4] = 0x24;
+    md_travail()[MD_OFF_PHRASES + 4] = val;
     trace(0, avec);
-    printf("%-4c %-20s %s\n", le, md_cmd_nom(r), avec);
-  }
+    ok[0] = strcmp(avec, temoin) != 0;
 
-  printf("\nLes MD CMD (colonne MD), memes conditions :\n");
-  printf("%-6s %-24s %s\n", "CODE", "NOM", "EFFET");
-  printf("------ ------------------------ ------------------------------\n");
-  for (int r = 0; r < MD_MDCMD_NOMBRE; r++) {
-    pose_morceau(0);
-    md_travail()[MD_OFF_PHRASES + 5] = (uint8_t)r;
-    md_travail()[MD_OFF_PHRASES + 6] = 0x24;
-    trace(0, avec);
-    printf("%02X     %-24s %s\n", md_mdcmd_code(r), md_mdcmd_nom(r), avec);
-  }
-
-  // ── LES COMMANDES QU'UNE TRACE DE QUATORZE TICKS NE MONTRE PAS ────────
-  // Celles qui deplacent une position ou reglent un parametre ne s'ecrivent
-  // pas sur la puce a la ligne ou on les pose. On les eprouve sur ce qu'elles
-  // CHANGENT : la suite des notes jouees.
-  printf("\n\nEssais cibles — la suite des notes que la puce recoit :\n\n");
-  { uint8_t *m;
-    // H dans une PHRASE : trois notes, puis H00. On doit les reentendre.
-    pose_morceau(0); m = md_travail();
-    for (int l = 0; l < 3; l++) {
-      const uint32_t b = MD_OFF_PHRASES + (uint32_t)l * MD_PHRASE_OCTETS;
-      m[b + 0] = (uint8_t)(49 + l); m[b + 1] = 1; m[b + 2] = MD_VIDE;
+    for (int col = 0; col < 2; col++) {
+      pose_morceau(0); pose_table_neutre();
+      { const uint32_t b = MD_OFF_TABLES + 3 * MD_TABLE_OCTETS;
+        md_travail()[b + (col ? 4 : 2)] = (uint8_t)r;
+        md_travail()[b + (col ? 5 : 3)] = val; }
+      trace(0, avec);
+      ok[1 + col] = strcmp(avec, temoinT) != 0;
     }
-    { const uint32_t b = MD_OFF_PHRASES + 3 * MD_PHRASE_OCTETS;
-      m[b + 3] = (uint8_t)rang_de('H'); m[b + 4] = 0x00; }
-    trace(0, avec);
-    printf("  H00 en ligne 3 d'une phrase\n    %s\n\n", avec);
+    const char *xp = excuse(e, 0), *xt = excuse(e, 1);
+    for (int k = 0; k < 3; k++)
+      if (!ok[k] && !(k == 0 ? xp : xt)) manquantes++;
+    printf("%-4c %-20s %-10s %-10s %-10s\n", le, md_cmd_nom(r),
+           ok[0] ? "agit" : (xp ? xp : "RIEN"),
+           ok[1] ? "agit" : (xt ? xt : "RIEN"),
+           ok[2] ? "agit" : (xt ? xt : "RIEN"));
+  }
 
-    // K : coupure a trois ticks.
-    pose_morceau(0); m = md_travail();
-    m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('K'); m[MD_OFF_PHRASES + 4] = 0x03;
+  printf("\n%-6s %-24s %-10s %-10s\n", "MDCMD", "NOM", "PHRASE", "TABLE MD");
+  printf("------ ------------------------ ---------- ----------\n");
+  for (int r = 0; r < MD_MDCMD_NOMBRE; r++) {
+    int ok[2];
+    pose_morceau(0);
+    const int e = md_mdcmd_effet(r);
+    const uint8_t val = (e == MD_E_RIEN) ? 0x24 : valeur_pour(e);
+    md_travail()[MD_OFF_PHRASES + 5] = (uint8_t)r;
+    md_travail()[MD_OFF_PHRASES + 6] = val;
     trace(0, avec);
-    printf("  K03 — la note doit s'eteindre\n    %s\n\n", avec);
+    ok[0] = strcmp(avec, temoin) != 0;
 
-    // L : glissando vers la note de la ligne suivante.
-    pose_morceau(0); m = md_travail();
-    { const uint32_t b = MD_OFF_PHRASES + MD_PHRASE_OCTETS;
-      m[b + 0] = 61; m[b + 1] = 1; m[b + 2] = MD_VIDE;
-      m[b + 3] = (uint8_t)rang_de('L'); m[b + 4] = 0x20; }
+    pose_morceau(0); pose_table_neutre();
+    { const uint32_t b = MD_OFF_TABLES + 3 * MD_TABLE_OCTETS;
+      md_travail()[b + 6] = (uint8_t)r; md_travail()[b + 7] = val; }
     trace(0, avec);
-    printf("  L20 vers une note douze demi-tons plus haut\n    %s\n\n", avec);
+    ok[1] = strcmp(avec, temoinT) != 0;
+    const char *xp = excuse(e, 0), *xt = excuse(e, 1);
+    for (int k = 0; k < 2; k++)
+      if (!ok[k] && !(k == 0 ? xp : xt)) manquantes++;
+    printf("%02X     %-24s %-10s %-10s\n", md_mdcmd_code(r), md_mdcmd_nom(r),
+           ok[0] ? "agit" : (xp ? xp : "RIEN"),
+           ok[1] ? "agit" : (xt ? xt : "RIEN"));
+  }
+  printf("\n%d cases sans effet.\n", manquantes);
 
-    // M : volume general a la moitie.
-    pose_morceau(0); m = md_travail();
-    m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('M'); m[MD_OFF_PHRASES + 4] = 0x08;
-    trace(0, avec);
-    printf("  M08 — le volume doit tomber\n    %s\n\n", avec);
-
-    // W puis V : la profondeur vient de W.
+  // ── LES « REGLAGE » PROUVES A PART ────────────────────────────────────
+  // Elles ne parlent pas a la puce : elles changent la CADENCE ou un
+  // parametre. On les eprouve sur ce qu'elles deplacent.
+  printf("\nLes reglages, prouves sur ce qu'ils changent :\n");
+  { uint8_t *m;
+    for (int essai = 0; essai < 3; essai++) {
+      pose_morceau(0); m = md_travail();
+      for (int l = 0; l < 2; l++) {
+        const uint32_t b = MD_OFF_PHRASES + (uint32_t)l * MD_PHRASE_OCTETS;
+        m[b + 0] = (uint8_t)(49 + l); m[b + 1] = 1; m[b + 2] = MD_VIDE;
+      }
+      if (essai == 1) { m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('S');
+                        m[MD_OFF_PHRASES + 4] = 0x03; }
+      if (essai == 2) { m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('T');
+                        m[MD_OFF_PHRASES + 4] = 0xF0; }
+      trace(0, avec);
+      int quand = -1, n = 0;
+      for (const char *q = avec; *q; q++)
+        if (*q == '|') { n++; }
+        else if (q[0] == 'F' && q[1] == 'M' && q[2] == 'O' && q[3] == 'N'
+                 && n > 2 && quand < 0) quand = n;
+      printf("  %-24s deuxieme note au tick %d\n",
+             essai == 0 ? "sans rien" : essai == 1 ? "S03 (3 ticks/ligne)"
+                                                   : "TF0 (240 BPM)", quand);
+    }
+    // W seul ne s'entend pas ; W puis V, si.
     pose_morceau(0); m = md_travail();
     m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('W'); m[MD_OFF_PHRASES + 4] = 0x02;
     { const uint32_t b = MD_OFF_PHRASES + MD_PHRASE_OCTETS;
       m[b + 3] = (uint8_t)rang_de('V'); m[b + 4] = 0x40; }
     trace(0, avec);
-    printf("  W02 puis V40 — vibrato de profondeur 2, pas 0\n    %s\n\n", avec);
-
-    // N : rupture, on doit passer a la ligne de SONG suivante.
-    pose_morceau(0); m = md_travail();
-    m[MD_OFF_SONG + 1] = 1;                       // ligne 1 -> chain 01
-    m[MD_OFF_CHAINS + 1 * MD_LIGNES_CHAIN * 2] = 1;   // chain 01 -> phrase 01
-    { const uint32_t b = MD_OFF_PHRASES + (uint32_t)MD_LIGNES_PHRASE * MD_PHRASE_OCTETS;
-      m[b + 0] = 80; m[b + 1] = 1; m[b + 2] = MD_VIDE; }
-    m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('N'); m[MD_OFF_PHRASES + 4] = 0x00;
-    trace(0, avec);
-    printf("  N00 — la note 80 de la phrase suivante doit arriver\n    %s\n\n", avec);
-
-    // ── LES MEMES COMMANDES, MAIS DANS UNE TABLE ──────────────────────
-    // Une table avance d'une ligne par TICK : la commande posee sur sa
-    // ligne 3 n'agit qu'au quatrieme tick, puis a chaque tour.
-    pose_morceau(0); m = md_travail();
-    m[MD_OFF_INSTR + 59] = 0;                      // instrument 01 -> table 00
-    for (int l = 0; l < MD_LIGNES_TABLE; l++) {
-      const uint32_t b = MD_OFF_TABLES + (uint32_t)l * MD_TABLE_OCTETS;
-      m[b + 2] = MD_VIDE; m[b + 4] = MD_VIDE; m[b + 6] = MD_VIDE;
-    }
-    { const uint32_t b = MD_OFF_TABLES + 3 * MD_TABLE_OCTETS;
-      m[b + 2] = (uint8_t)rang_de('P'); m[b + 3] = 0x51; }
-    trace(0, avec);
-    printf("  P51 dans la TABLE, ligne 3\n    %s\n\n", avec);
-
-    pose_morceau(0); m = md_travail();
-    m[MD_OFF_INSTR + 59] = 0;
-    for (int l = 0; l < MD_LIGNES_TABLE; l++) {
-      const uint32_t b = MD_OFF_TABLES + (uint32_t)l * MD_TABLE_OCTETS;
-      m[b + 2] = MD_VIDE; m[b + 4] = MD_VIDE; m[b + 6] = MD_VIDE;
-    }
-    { const uint32_t b = MD_OFF_TABLES + 2 * MD_TABLE_OCTETS;
-      m[b + 4] = (uint8_t)rang_de('V'); m[b + 5] = 0x44; }
-    trace(0, avec);
-    printf("  V44 dans la TABLE, seconde colonne CMD\n    %s\n", avec);
+    printf("  W02 puis V40             %s\n",
+           strstr(avec, "PITCH0=49+32") ? "vibrato de profondeur 2 : oui"
+                                        : "PAS DE VIBRATO");
   }
   return 0;
 }

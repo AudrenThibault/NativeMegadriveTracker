@@ -35,15 +35,31 @@ typedef struct {
   uint8_t  hop_faits[3][MD_LIGNES_TABLE];
   uint8_t  vol;            // le volume de la ligne, avant la table
 
-  // ── LES DEUX EMPLACEMENTS D'EFFET ─────────────────────────────────────
-  // 0 = la colonne CMD (la lettre), 1 = la colonne MD CMD (le code). Les deux
-  // tournent EN MEME TEMPS : une ligne peut porter un vibrato à la lettre et
-  // un glissando au code, comme dans DefleMask. Un seul emplacement aurait
-  // obligé l'une des deux colonnes à écraser l'autre.
-  uint8_t  eff[2];         // MD_E_*
-  uint8_t  effval[2];
+  // ── LES CINQ EMPLACEMENTS D'EFFET ─────────────────────────────────────
+  // Repris du projet DS (ch_active_eff) : chaque COLONNE a le sien, et aucune
+  // n'écrase l'autre.
+  //   0  la colonne CMD d'une ligne de phrase
+  //   1  la colonne MD CMD d'une ligne de phrase
+  //   2  la première colonne CMD de la table
+  //   3  la seconde colonne CMD de la table
+  //   4  la colonne MD CMD de la table
+  // Les cinq tournent à chaque tick : une note peut porter un vibrato écrit
+  // dans sa phrase pendant que sa table fait glisser la hauteur.
+  uint8_t  eff[5];         // MD_E_*, MD_E_RIEN si l'emplacement est libre
+  uint8_t  effval[5];
+
+  // ── LES PARAMÈTRES MÉMORISÉS ──────────────────────────────────────────
+  // ⚠️ Une commande à valeur 00 REPREND les paramètres d'avant, elle ne les
+  // remet pas à zéro : c'est la convention des trackers, et celle de la DS
+  // (md_table_latch_effect). Sans ça, une table qui repose son vibrato tous
+  // les seize ticks le relançait de zéro à chaque tour.
+  uint8_t  vib_vit, vib_prof;     // V et W
+  uint8_t  trem_vit, trem_prof;   // Z
+  uint8_t  porta_vit;             // L
+  uint8_t  arp_val;               // C
+  uint8_t  retrig_vit;            // R
+  uint8_t  phase_trem;            // le trémolo a sa phase à lui
   int8_t   vol_delta;      // ce que les glissandos et le trémolo retirent
-  uint8_t  vib_prof;       // profondeur posée par W, si elle l'a été
   uint8_t  retrig;         // compteur de R
   uint8_t  hop_ph[MD_LIGNES_PHRASE];   // les tours faits par chaque H de phrase
 
@@ -126,9 +142,12 @@ static uint32_t table_base(uint8_t tab, int lig) {
 // arrêt. On relançait la lecture et la voie repartait avec les restes de la
 // précédente — au mieux un désaccord, au pire une voie muette.
 static void voie_remet_a_zero(voie_t *v) {
-  v->eff[0] = v->eff[1] = MD_E_RIEN;
-  v->effval[0] = v->effval[1] = 0;
-  v->vol_delta = 0; v->vib_prof = 0; v->retrig = 0;
+  for (int k = 0; k < 5; k++) { v->eff[k] = MD_E_RIEN; v->effval[k] = 0; }
+  v->vib_vit = 0; v->vib_prof = 0;
+  v->trem_vit = 0; v->trem_prof = 0;
+  v->porta_vit = 0; v->arp_val = 0; v->retrig_vit = 0;
+  v->phase_trem = 0;
+  v->vol_delta = 0; v->retrig = 0;
   for (int k = 0; k < MD_LIGNES_PHRASE; k++) v->hop_ph[k] = 0;
   v->cmd = MD_VIDE; v->cmdval = 0; v->phase = 0;
   v->fin = 0; v->cible = 0; v->coupe = 0;
@@ -591,8 +610,10 @@ static void effet_pas(int c, int e, uint8_t val, int t) {
 
   switch (e) {
     case MD_E_ARPEGE: {   // la note, puis +x, puis +y, un pas par tick
+      const uint8_t a = v->arp_val;
       const int k = t % 3;
-      const int n = (int)v->note + (k == 1 ? x : (k == 2 ? y : 0));
+      const int n = (int)v->note
+                  + (k == 1 ? (a >> 4) : (k == 2 ? (a & 15) : 0));
       if (c < 6 && c != MD_PCM_VOIE) md_fm_hauteur(c, n, v->fin);
       else if (c >= 6 && c != 9)     md_psg_hauteur(c - 6, n, v->fin);
       break;
@@ -602,8 +623,8 @@ static void effet_pas(int c, int e, uint8_t val, int t) {
       // Une triangulaire sur seize pas. Pas de table de sinus : elle coûterait
       // de la ROM pour une différence qu'on n'entend pas sur un vibrato de
       // tracker, et LSDJ lui-même n'en a pas.
-      const uint8_t prof = v->vib_prof ? v->vib_prof : y;
-      v->phase = (uint8_t)((v->phase + x) & 15);
+      const uint8_t prof = v->vib_prof, vit = v->vib_vit;
+      v->phase = (uint8_t)((v->phase + vit) & 15);
       const int p = (v->phase < 8) ? v->phase : (16 - v->phase);   // 0..8
       v->fin = (int16_t)(((p - 4) * (int)prof * 4));
       pose_hauteur(c);
@@ -626,7 +647,7 @@ static void effet_pas(int c, int e, uint8_t val, int t) {
     case MD_E_PORTA_TON:
     case MD_E_PORTA_VOL:  // on glisse vers la cible
       if (v->cible && v->cible != v->note) {
-        const int pas = (int)val * 2;
+        const int pas = (int)v->porta_vit * 2;
         const int ecart = ((int)v->cible - (int)v->note) * 256 - v->fin;
         if (ecart > 0)      v->fin += (int16_t)((ecart < pas) ? ecart : pas);
         else if (ecart < 0) v->fin -= (int16_t)((-ecart < pas) ? -ecart : pas);
@@ -634,10 +655,12 @@ static void effet_pas(int c, int e, uint8_t val, int t) {
       }
       if (e == MD_E_PORTA_VOL) { v->vol_delta--; pose_volume(c); }
       break;
-    case MD_E_TREMOLO: {  // x la vitesse, y la profondeur, sur le VOLUME
-      v->phase = (uint8_t)((v->phase + x) & 15);
-      const int p = (v->phase < 8) ? v->phase : (16 - v->phase);
-      v->vol_delta = (int8_t)(((p - 4) * (int)y) / 8);
+    case MD_E_TREMOLO: {  // vitesse et profondeur, mais sur le VOLUME
+      // Sa phase est à lui : partagée avec le vibrato, les deux se
+      // parasitaient dès qu'une table en portait un et la phrase l'autre.
+      v->phase_trem = (uint8_t)((v->phase_trem + v->trem_vit) & 15);
+      const int p = (v->phase_trem < 8) ? v->phase_trem : (16 - v->phase_trem);
+      v->vol_delta = (int8_t)(((p - 4) * (int)v->trem_prof) / 8);
       pose_volume(c);
       break;
     }
@@ -645,14 +668,16 @@ static void effet_pas(int c, int e, uint8_t val, int t) {
       v->vol_delta = (int8_t)borne(v->vol_delta + (int)x - (int)y, -15, 15);
       pose_volume(c);
       break;
-    case MD_E_RETRIG:     // on rejoue la note tous les y ticks
-      if (y && ++v->retrig >= y) {
+    case MD_E_RETRIG: {   // on rejoue la note tous les n ticks
+      const uint8_t n = v->retrig_vit;
+      if (n && ++v->retrig >= n) {
         v->retrig = 0;
         if (c < 6 && c != MD_PCM_VOIE) md_fm_note_on(c, v->note);
         else if (c == 9) { /* le bruit se relance par sa macro */ }
         else if (c >= 6) md_psg_note_on(c - 6, v->note, (uint8_t)(15 - niveau_de(v)));
       }
       break;
+    }
     case MD_E_COUPE:      // coupure après tant de ticks
       if (v->coupe && t >= v->coupe) note_coupe(c);
       break;
@@ -677,7 +702,9 @@ static void commande_tick(int c, int t) {
   if (!v->note) return;
   // Les DEUX emplacements avancent, la lettre puis le code : c'est l'ordre
   // d'affichage, donc celui qu'on lit sur l'écran.
-  for (int s = 0; s < 2; s++)
+  // Les CINQ emplacements avancent : la phrase d'abord, la table ensuite —
+  // c'est l'ordre de lecture à l'écran, donc celui qu'on attend.
+  for (int s = 0; s < 5; s++)
     if (v->eff[s] != MD_E_RIEN) effet_pas(c, v->eff[s], v->effval[s], t);
 }
 
@@ -835,10 +862,31 @@ static int effet_immediat(int c, int effet, uint8_t val) {
   return 0;
 }
 
+// ── LES PARAMÈTRES QU'UNE COMMANDE MÉMORISE ───────────────────────────────
+// ⚠️ UNE VALEUR 00 NE REMET RIEN À ZÉRO : elle reprend ce qui était réglé.
+// C'est la convention des trackers et celle de la DS (md_table_latch_effect).
+// Un quartet nul reprend son quartet d'avant, l'autre non — c'est ce qui
+// permet d'écrire « V04 » pour ne changer que la profondeur.
+static void verrouille(int c, int effet, uint8_t val) {
+  voie_t *v = &voies[c];
+  const uint8_t x = (uint8_t)(val >> 4), y = (uint8_t)(val & 15);
+  switch (effet) {
+    case MD_E_ARPEGE:  if (val) v->arp_val = val; break;
+    case MD_E_VIBRATO:
+    case MD_E_VIB_VOL: if (x) v->vib_vit = x; if (y) v->vib_prof = y; break;
+    case MD_E_TREMOLO: if (x) v->trem_vit = x; if (y) v->trem_prof = y; break;
+    case MD_E_PORTA_TON:
+    case MD_E_PORTA_VOL: if (val) v->porta_vit = val; break;
+    case MD_E_RETRIG:  if (y) v->retrig_vit = y; break;
+    default: break;
+  }
+}
+
 static void arme_effet(int c, int slot, int effet, uint8_t val) {
   voie_t *v = &voies[c];
   v->eff[slot] = MD_E_RIEN;
   if (effet_immediat(c, effet, val)) return;
+  verrouille(c, effet, val);
 
   switch (effet) {
     case MD_E_COUPE:
@@ -860,7 +908,7 @@ static void arme_effet(int c, int slot, int effet, uint8_t val) {
   }
   v->eff[slot] = (uint8_t)effet;
   v->effval[slot] = val;
-  v->phase = 0;
+  v->phase = 0; v->phase_trem = 0;
   v->retrig = 0;
 }
 
@@ -873,8 +921,14 @@ static void arme_commande(int c, const md_ligne_phrase *r) {
   if (r->cmd == MD_VIDE && r->mdcmd == MD_VIDE) {
     if (v->eff[0] != MD_E_RIEN || v->eff[1] != MD_E_RIEN) {
       v->eff[0] = v->eff[1] = MD_E_RIEN;
-      v->fin = 0; v->vol_delta = 0;
-      pose_hauteur(c); pose_volume(c);
+      // ⚠️ On ne remet la hauteur et le volume droits QUE si la table n'a
+      // rien à dire : sinon désarmer la phrase effacerait le vibrato que la
+      // table est en train de jouer.
+      if (v->eff[2] == MD_E_RIEN && v->eff[3] == MD_E_RIEN
+          && v->eff[4] == MD_E_RIEN) {
+        v->fin = 0; v->vol_delta = 0;
+        pose_hauteur(c); pose_volume(c);
+      }
     }
     return;
   }
@@ -913,6 +967,10 @@ static void joue_note(int c, const md_ligne_phrase *pr) {
   // ce qui rend un arpège reproductible d'une note à l'autre.
   v->table = md_lit(base + 59);
   table_remet_a_zero(v);
+  // La table repart de sa première ligne : ses commandes aussi. Les garder
+  // armées ferait continuer sur la note suivante un glissando que plus aucune
+  // ligne ne demande.
+  for (int k = 2; k < 5; k++) { v->eff[k] = MD_E_RIEN; v->effval[k] = 0; }
   // Les macros repartent de leur premier pas, comme la table : une macro qui
   // reprendrait où elle s'est arrêtée donnerait une attaque différente à
   // chaque note.
@@ -1154,16 +1212,26 @@ static void commande_md(int c, uint8_t rang, uint8_t val);
 // pas de ligne à retarder.
 static void table_cmds(int c, int t) {
   voie_t *v = &voies[c];
+  (void)t;
   if (v->table >= MD_MAX_TABLES) return;
 
   for (int s = 1; s <= 2; s++) {
     const uint32_t b = table_base(v->table, v->table_pas[s]);
     const uint8_t cmd = md_lit(b + (uint32_t)(s == 1 ? 2 : 4));
     const uint8_t val = md_lit(b + (uint32_t)(s == 1 ? 3 : 5));
+    const int slot = 1 + s;                 // 2 et 3
+    // ⚠️ UNE LIGNE SANS COMMANDE NE DÉSARME RIEN. La commande posée plus haut
+    // continue d'agir, comme dans LSDJ et comme sur la DS. Sans cette règle,
+    // un vibrato écrit sur UNE ligne d'une table de seize repartait de zéro
+    // quinze ticks sur seize : on l'entendait à peine, et un retrig n'atteignait
+    // jamais son intervalle. Pour arrêter une commande, on la réécrit à 00.
     if (cmd == MD_VIDE) continue;
     const int e = md_cmd_effet(cmd);
     if (e == MD_E_RIEN || e == MD_E_HOP || e == MD_E_RETARD) continue;
-    if (!effet_immediat(c, e, val)) effet_pas(c, e, val, t);
+    // On ne RÉARME que ce qui change : réarmer à chaque tour remettrait la
+    // phase d'un vibrato à zéro et il ne tournerait jamais.
+    if (v->eff[slot] != (uint8_t)e || v->effval[slot] != val)
+      arme_effet(c, slot, e, val);
   }
 
   // La colonne MD voyage avec le second flux, comme sur la DS : c'est un
@@ -1174,7 +1242,8 @@ static void table_cmds(int c, int t) {
       commande_md(c, md, mv);              // les écritures de registre
       const int e = md_mdcmd_effet(md);    // et les effets de séquence
       if (e != MD_E_RIEN && e != MD_E_RETARD
-          && !effet_immediat(c, e, mv)) effet_pas(c, e, mv, t);
+          && (v->eff[4] != (uint8_t)e || v->effval[4] != mv))
+        arme_effet(c, 4, e, mv);
     }
   }
 }
