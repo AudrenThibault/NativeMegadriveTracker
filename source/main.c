@@ -1,4 +1,24 @@
 // ============================================================================
+//  GeneTracker — un tracker de musique qui tourne sur la Sega Mega Drive.
+//  Copyright (C) 2026 Audren Thibault
+//  https://github.com/AudrenThibault/NativeMegadriveTracker
+//
+//  Ce programme est un logiciel libre : vous pouvez le redistribuer et le
+//  modifier selon les termes de la GNU General Public License, version 3,
+//  telle que publiée par la Free Software Foundation.
+//
+//  Il est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE,
+//  sans même la garantie implicite de QUALITÉ MARCHANDE ou d'ADÉQUATION À UN
+//  USAGE PARTICULIER. Voir la GNU General Public License pour les détails.
+//
+//  Vous devriez avoir reçu une copie de la licence avec ce programme : c'est
+//  le fichier LICENSE. Sinon : https://www.gnu.org/licenses/
+//
+//  ⚠️ LA PAGE HELP PORTE L'AVIS LÉGAL, et ce n'est pas décoratif : l'article
+//  5(d) de la GPL v3 impose qu'une version modifiée continue de l'afficher.
+//  Voir AIDE[] plus bas.
+// ============================================================================
+// ============================================================================
 //  GeneTracker — un tracker qui tourne sur la Mega Drive.
 //
 //  La chaîne de navigation de LSDJ : SONG donne des chains, un chain donne des
@@ -21,6 +41,7 @@
 #include "banque_pcm.h"
 #include "morceaux_rom.h"
 
+enum { PAGE_AIDE = 7 };
 enum { PAGE_SONG = 0, PAGE_CHAIN = 1, PAGE_PHRASE = 2,
        PAGE_INSTR = 3, PAGE_TABLE = 4, PAGE_PROJECT = 5,
        PAGE_FICHIER = 6 };
@@ -891,10 +912,10 @@ static void table_dessine(void) {
 // morceau particulier était un second chemin, contraire à la règle — et la
 // démo n'a jamais été demandée. Un morceau versé depuis le Mac apparaît dans
 // la liste comme les autres, marqué ROM.
-enum { PJ_BPM = 0, PJ_NOUVEAU, PJ_FICHIER, PJ_NOMBRE };
+enum { PJ_BPM = 0, PJ_NOUVEAU, PJ_FICHIER, PJ_AIDE, PJ_NOMBRE };
 
 static const char *PROJ_NOMS[PJ_NOMBRE] = {
-  "BPM", "NEW SONG", "LOAD/SAVE SONG"
+  "BPM", "NEW SONG", "LOAD/SAVE SONG", "HELP"
 };
 
 static int message_reste;
@@ -1103,6 +1124,47 @@ static void rom_vers_bibliotheque(void) {
     plein[MD_BIB_NOM] = 0;
     md_bib_pose_nom(libre, plein);
   }
+}
+
+// ── LA PAGE HELP ──────────────────────────────────────────────────────────
+// ⚠️ CE QUI EST ÉCRIT ICI N'EST PAS DÉCORATIF, C'EST L'AVIS LÉGAL.
+//
+// La GNU GPL version 3 dit, article 5(d) : si le programme affiche des
+// « Appropriate Legal Notices », TOUTE VERSION MODIFIÉE DOIT CONTINUER À LES
+// AFFICHER. C'est ce qui rend le crédit opposable — aucune licence permissive
+// ne l'obtient, et la GPL elle-même ne l'obtient pas sans cette page.
+//
+// En retirer le nom, le lien ou l'avis de garantie revient donc à sortir des
+// termes sous lesquels ce code est distribué. On peut ajouter des lignes
+// ici ; on n'en enlève pas.
+static const char *AIDE[] = {
+  "GENETRACKER",
+  "A MUSIC TRACKER THAT RUNS ON THE",
+  "SEGA MEGA DRIVE.",
+  "",
+  "COPYRIGHT (C) 2026 AUDREN THIBAULT",
+  "",
+  "GITHUB.COM/AUDRENTHIBAULT/",
+  "  NATIVEMEGADRIVETRACKER",
+  "",
+  "THIS PROGRAM COMES WITH ABSOLUTELY",
+  "NO WARRANTY. IT IS FREE SOFTWARE",
+  "UNDER THE GNU GPL VERSION 3, AND",
+  "YOU ARE WELCOME TO REDISTRIBUTE IT",
+  "UNDER ITS TERMS. THE FULL LICENCE",
+  "IS IN THE FILE NAMED LICENSE, IN",
+  "THE SOURCE REPOSITORY ABOVE.",
+  "",
+  "B  BACK"
+};
+
+static void aide_dessine(void) {
+  md_ecran_texte(0, 0, MD_TITRE, "HELP");
+  for (int i = 0; i < (int)(sizeof(AIDE) / sizeof(AIDE[0])); i++)
+    md_ecran_texte(2, 3 + i,
+                   (i == 0) ? MD_ACCENT : (i == 4 || i == 6 || i == 7)
+                              ? MD_TITRE : MD_DATA,
+                   AIDE[i]);
 }
 
 static void fichier_dessine(void) {
@@ -1417,6 +1479,7 @@ static void redessine_page(void) {
   else if (page == PAGE_INSTR)   instr_dessine();
   else if (page == PAGE_TABLE)   table_dessine();
   else if (page == PAGE_PROJECT) projet_dessine();
+  else if (page == PAGE_AIDE)    aide_dessine();
   else                           fichier_dessine();
 }
 
@@ -1429,6 +1492,7 @@ static void dessine_tout(void) {
   else if (page == PAGE_INSTR)   instr_dessine();
   else if (page == PAGE_TABLE)   table_dessine();
   else if (page == PAGE_PROJECT) projet_dessine();
+  else if (page == PAGE_AIDE)    aide_dessine();
   else                           fichier_dessine();
   if (nom_ouvert) nom_dessine();
   if (efface_demande >= 0) efface_dessine();
@@ -1757,6 +1821,8 @@ static void pose(void) {
     // leur ligne, jamais par un appui de trop ailleurs.
     if (projet_ligne == PJ_NOUVEAU) { md_song_vide(); modifie_depuis = 1;
                                       dit_message("NEW SONG"); }
+    else if (projet_ligne == PJ_AIDE) { retour_fichier = PAGE_PROJECT;
+                                        page = PAGE_AIDE; }
     else if (projet_ligne == PJ_FICHIER) {
       retour_fichier = PAGE_PROJECT;
       page = PAGE_FICHIER;
@@ -2270,6 +2336,9 @@ void principal(void) {
     // Depuis la liste il ramène à la rangée LOAD/SAVE/ERASE ; depuis cette
     // rangée il quitte l'écran. B ne sert à rien d'autre ici, contrairement
     // aux pages de séquence où il copie.
+    if ((frappes & MD_B) && page == PAGE_AIDE) {
+      page = PAGE_PROJECT; redessiner = 1; b_utilise = 1;
+    }
     if ((frappes & MD_B) && page == PAGE_FICHIER) {
       if (fic_zone == 1) { fic_zone = 0; fichier_dessine(); }
       else               { page = retour_fichier; redessiner = 1; }
