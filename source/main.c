@@ -101,7 +101,14 @@ static uint8_t derniere_phrase;
 
 // PHRASE
 static int phrase_id, phrase_ligne, phrase_col;  // 0..6
-static uint8_t derniere_note = 49;               // C-4, comme sur la DS
+// ⚠️ UNE dernière note PAR VOIE, et C-4 quand la voie n'a rien joué.
+// Une seule mémoire pour tout le morceau faisait qu'une phrase neuve
+// s'ouvrait sur la hauteur touchée en dernier N'IMPORTE OÙ : on posait une
+// note sur une voie vierge et il en sortait celle de la voie d'à côté.
+// Zéro veut dire « cette voie n'a encore rien joué », comme pour
+// dernier_instr_voie juste en dessous.
+#define NOTE_C4 49
+static uint8_t derniere_note_voie[MD_CANAUX];
 
 // ⚠️ UN dernier instrument PAR VOIE, pas un pour tout le morceau.
 // Une voie porte un timbre : reposer une note sur la colonne de basse doit
@@ -1660,6 +1667,16 @@ static void instr_remet_a_neuf(uint8_t n) {
                     + (uint32_t)(n - 1) * MD_INSTR_OCTETS);
 }
 
+// ⚠️ LE PCM NE SE SOUVIENT DE RIEN, ET C'EST VOULU. Un échantillon joue à sa
+// vitesse d'enregistrement en C-4 : c'est la hauteur qu'on veut chaque fois
+// qu'on en pose un, pas celle du sample précédent, qui était accordée pour un
+// autre son. On la change après si on veut, mais on part toujours de là.
+static uint8_t note_voie_courante(void) {
+  const int v = borne(voie_courante, 0, MD_CANAUX - 1);
+  if (v == MD_PCM_VOIE) return NOTE_C4;
+  return derniere_note_voie[v] ? derniere_note_voie[v] : NOTE_C4;
+}
+
 static uint8_t instr_voie_courante(void) {
   const int v = borne(voie_courante, 0, MD_CANAUX - 1);
   if (!dernier_instr_voie[v]) {
@@ -1866,8 +1883,9 @@ static void pose(void) {
       // Une note posée sur une case vide reprend la DERNIÈRE, et son
       // instrument : c'est ce qui donne un timbre par colonne au lieu de
       // repartir de l'instrument 1 à chaque fois.
-      case 0: if (r.note) derniere_note = r.note;
-              else { r.note = derniere_note;
+      case 0: if (r.note) derniere_note_voie[borne(voie_courante, 0,
+                                                    MD_CANAUX - 1)] = r.note;
+              else { r.note = note_voie_courante();
                      if (!r.instr) r.instr = instr_voie_courante(); }
               dernier_instr_voie[borne(voie_courante, 0, MD_CANAUX - 1)] =
                   r.instr ? r.instr : instr_voie_courante();
@@ -2080,7 +2098,7 @@ static void modifie(int sens, int grand) {
       // seize — c'est ce qu'attend l'oreille, et ce que fait l'iPad.
       case 0: if (r.note && r.note != MD_VIDE) {
                 r.note = (uint8_t)borne((int)r.note + sens * (grand ? 12 : 1), 1, 108);
-                derniere_note = r.note;
+                derniere_note_voie[borne(voie_courante, 0, MD_CANAUX - 1)] = r.note;
                 // On ENTEND la note qu'on déplace : régler une hauteur en
                 // silence, c'est deviner. À l'arrêt seulement — pendant la
                 // lecture, l'audition volerait sa voie au morceau.
