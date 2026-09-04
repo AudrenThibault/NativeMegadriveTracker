@@ -78,6 +78,7 @@ void md_fm_pose_lfo(int a, uint8_t b) { note_appel("LFO=%d/%d", a, b); }
 void md_fm_pose_mul(int c, int o, uint8_t v) { note_appel("MUL%d.%d=%d", c, o, v); }
 void md_fm_pose_pan(int c, uint8_t v, uint8_t a, uint8_t p) { note_appel("PAN%d=%d", c, v); }
 void md_fm_pose_tl(int c, int o, uint8_t v) { note_appel("TL%d.%d=%d", c, o, v); }
+void md_fm_volume(int c, uint8_t n) { dernier_niveau[c] = n; note_appel("VOL%d=%d", c, n); }
 void md_psg_note_off(int c) { note_appel("PSGOFF%d", c); }
 void md_puces_init(void) {}
 void md_puces_silence(void) {}

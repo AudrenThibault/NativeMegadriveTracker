@@ -57,6 +57,9 @@ uint8_t md_fm_detune_vu(int voie, int op);
 uint8_t md_fm_rs_vu(int voie, int op);
 void md_fm_pose_alg_fb(int voie, uint8_t alg, uint8_t fb);
 void md_fm_pose_tl(int voie, int op, uint8_t tl);
+// Le volume d'une voie FM, 0-15, 15 = celui de l'instrument. Il atténue les
+// opérateurs PORTEUSES — le YM2612 n'a pas de registre de volume.
+void md_fm_volume(int voie, uint8_t niveau);
 void md_fm_pose_mul(int voie, int op, uint8_t mul);
 void md_fm_pose_ar(int voie, int op, uint8_t ar);
 void md_fm_pose_pan(int voie, uint8_t pan, uint8_t ams, uint8_t pms);

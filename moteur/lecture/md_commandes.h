@@ -49,4 +49,22 @@ enum {
 };
 int md_mdcmd_action(int rang);
 
+// ── L'EFFET, celui que le sequenceur execute ─────────────────────────────
+// ⚠️ UNE LETTRE ET UN CODE PEUVENT ETRE LE MEME EFFET. « C » et le code 00
+// sont tous deux l'arpege ; « V » et 04 sont le meme vibrato. Le sequenceur
+// ne connait donc ni les lettres ni les codes : il ne connait que cette
+// liste, et il n'y a qu'UNE implementation par effet. Les ecrire deux fois,
+// c'est se garantir qu'un jour l'une des deux sera corrigee et pas l'autre.
+enum {
+  MD_E_RIEN = 0,
+  MD_E_ARPEGE, MD_E_PORTA_HAUT, MD_E_PORTA_BAS, MD_E_PORTA_TON,
+  MD_E_VIBRATO, MD_E_PORTA_VOL, MD_E_VIB_VOL, MD_E_TREMOLO,
+  MD_E_VOL_SLIDE, MD_E_RETRIG, MD_E_SAUT, MD_E_RUPTURE,
+  MD_E_VIB_PROF, MD_E_FINE, MD_E_COUPE, MD_E_RETARD,
+  MD_E_TEMPO, MD_E_VITESSE, MD_E_VOL_GLOBAL, MD_E_PAN,
+  MD_E_TABLE, MD_E_HOP, MD_E_PITCH
+};
+int md_cmd_effet(int rang);     // colonne CMD, par le rang de la lettre
+int md_mdcmd_effet(int rang);   // colonne MD CMD, par le rang du code
+
 #endif

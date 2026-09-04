@@ -96,3 +96,65 @@ int md_mdcmd_action(int rang) {
   if (rang < 0 || rang >= MD_MDCMD_NOMBRE) return MD_P_RIEN;
   return ACTIONS[rang];
 }
+
+
+// ── DE LA LETTRE (ou du code) A L'EFFET ───────────────────────────────────
+// Meme ordre que LETTRES et CODES : ces tables sont lues par RANG, comme le
+// reste du format.
+static const uint8_t EFFET_LETTRE[MD_CMD_NOMBRE] = {
+  MD_E_TABLE,      /* A */
+  MD_E_ARPEGE,     /* C */
+  MD_E_RETARD,     /* D */
+  MD_E_HOP,        /* H */
+  MD_E_COUPE,      /* K */
+  MD_E_PORTA_TON,  /* L */
+  MD_E_VOL_GLOBAL, /* M */
+  MD_E_PAN,        /* O */
+  MD_E_PITCH,      /* P */
+  MD_E_RETRIG,     /* R */
+  MD_E_TEMPO,      /* T */
+  MD_E_VIBRATO,    /* V */
+  MD_E_TREMOLO,    /* Z */
+  MD_E_VOL_SLIDE,  /* B */
+  MD_E_PORTA_VOL,  /* E */
+  MD_E_VIB_VOL,    /* F */
+  MD_E_VITESSE,    /* S */
+  MD_E_SAUT,       /* J */
+  MD_E_RUPTURE,    /* N */
+  MD_E_VIB_PROF,   /* W */
+  MD_E_FINE        /* U */
+};
+
+// Les quinze premiers codes sont les effets de sequence de DefleMask, plus
+// quatre codes etendus. Le reste ecrit un registre et passe par
+// md_mdcmd_action : ici ils ne sont RIEN, et c'est voulu.
+static const uint8_t EFFET_CODE[MD_MDCMD_NOMBRE] = {
+  MD_E_ARPEGE,     /* 00 */
+  MD_E_PORTA_HAUT, /* 01 */
+  MD_E_PORTA_BAS,  /* 02 */
+  MD_E_PORTA_TON,  /* 03 */
+  MD_E_VIBRATO,    /* 04 */
+  MD_E_PORTA_VOL,  /* 05 */
+  MD_E_VIB_VOL,    /* 06 */
+  MD_E_TREMOLO,    /* 07 */
+  MD_E_PAN,        /* 08 */
+  MD_E_VITESSE,    /* 09 */
+  MD_E_VOL_SLIDE,  /* 0A */
+  MD_E_SAUT,       /* 0B */
+  MD_E_RETRIG,     /* 0C */
+  MD_E_RUPTURE,    /* 0D */
+  MD_E_VITESSE,    /* 0F */
+  MD_E_VIB_PROF,   /* E4 */
+  MD_E_FINE,       /* E5 */
+  MD_E_COUPE,      /* EC */
+  MD_E_RETARD,     /* ED */
+  MD_E_RIEN, MD_E_RIEN, MD_E_RIEN, MD_E_RIEN, MD_E_RIEN, MD_E_RIEN,
+  MD_E_RIEN, MD_E_RIEN, MD_E_RIEN, MD_E_RIEN, MD_E_RIEN
+};
+
+int md_cmd_effet(int rang) {
+  return (rang < 0 || rang >= MD_CMD_NOMBRE) ? MD_E_RIEN : EFFET_LETTRE[rang];
+}
+int md_mdcmd_effet(int rang) {
+  return (rang < 0 || rang >= MD_MDCMD_NOMBRE) ? MD_E_RIEN : EFFET_CODE[rang];
+}

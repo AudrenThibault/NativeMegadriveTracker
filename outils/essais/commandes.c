@@ -14,7 +14,7 @@ extern char journal[512];
 extern void journal_vide(void);
 extern void bouchons_remet(void);
 
-#define TICKS 14
+#define TICKS 34
 
 static void pose_morceau(uint8_t voie) {
   uint8_t *m = md_travail();
@@ -78,6 +78,62 @@ int main(void) {
     md_travail()[MD_OFF_PHRASES + 6] = 0x24;
     trace(0, avec);
     printf("%02X     %-24s %s\n", md_mdcmd_code(r), md_mdcmd_nom(r), avec);
+  }
+
+  // ── LES COMMANDES QU'UNE TRACE DE QUATORZE TICKS NE MONTRE PAS ────────
+  // Celles qui deplacent une position ou reglent un parametre ne s'ecrivent
+  // pas sur la puce a la ligne ou on les pose. On les eprouve sur ce qu'elles
+  // CHANGENT : la suite des notes jouees.
+  printf("\n\nEssais cibles — la suite des notes que la puce recoit :\n\n");
+  { uint8_t *m;
+    // H dans une PHRASE : trois notes, puis H00. On doit les reentendre.
+    pose_morceau(0); m = md_travail();
+    for (int l = 0; l < 3; l++) {
+      const uint32_t b = MD_OFF_PHRASES + (uint32_t)l * MD_PHRASE_OCTETS;
+      m[b + 0] = (uint8_t)(49 + l); m[b + 1] = 1; m[b + 2] = MD_VIDE;
+    }
+    { const uint32_t b = MD_OFF_PHRASES + 3 * MD_PHRASE_OCTETS;
+      m[b + 3] = (uint8_t)rang_de('H'); m[b + 4] = 0x00; }
+    trace(0, avec);
+    printf("  H00 en ligne 3 d'une phrase\n    %s\n\n", avec);
+
+    // K : coupure a trois ticks.
+    pose_morceau(0); m = md_travail();
+    m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('K'); m[MD_OFF_PHRASES + 4] = 0x03;
+    trace(0, avec);
+    printf("  K03 — la note doit s'eteindre\n    %s\n\n", avec);
+
+    // L : glissando vers la note de la ligne suivante.
+    pose_morceau(0); m = md_travail();
+    { const uint32_t b = MD_OFF_PHRASES + MD_PHRASE_OCTETS;
+      m[b + 0] = 61; m[b + 1] = 1; m[b + 2] = MD_VIDE;
+      m[b + 3] = (uint8_t)rang_de('L'); m[b + 4] = 0x20; }
+    trace(0, avec);
+    printf("  L20 vers une note douze demi-tons plus haut\n    %s\n\n", avec);
+
+    // M : volume general a la moitie.
+    pose_morceau(0); m = md_travail();
+    m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('M'); m[MD_OFF_PHRASES + 4] = 0x08;
+    trace(0, avec);
+    printf("  M08 — le volume doit tomber\n    %s\n\n", avec);
+
+    // W puis V : la profondeur vient de W.
+    pose_morceau(0); m = md_travail();
+    m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('W'); m[MD_OFF_PHRASES + 4] = 0x02;
+    { const uint32_t b = MD_OFF_PHRASES + MD_PHRASE_OCTETS;
+      m[b + 3] = (uint8_t)rang_de('V'); m[b + 4] = 0x40; }
+    trace(0, avec);
+    printf("  W02 puis V40 — vibrato de profondeur 2, pas 0\n    %s\n\n", avec);
+
+    // N : rupture, on doit passer a la ligne de SONG suivante.
+    pose_morceau(0); m = md_travail();
+    m[MD_OFF_SONG + 1] = 1;                       // ligne 1 -> chain 01
+    m[MD_OFF_CHAINS + 1 * MD_LIGNES_CHAIN * 2] = 1;   // chain 01 -> phrase 01
+    { const uint32_t b = MD_OFF_PHRASES + (uint32_t)MD_LIGNES_PHRASE * MD_PHRASE_OCTETS;
+      m[b + 0] = 80; m[b + 1] = 1; m[b + 2] = MD_VIDE; }
+    m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('N'); m[MD_OFF_PHRASES + 4] = 0x00;
+    trace(0, avec);
+    printf("  N00 — la note 80 de la phrase suivante doit arriver\n    %s\n", avec);
   }
   return 0;
 }

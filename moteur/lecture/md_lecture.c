@@ -35,6 +35,18 @@ typedef struct {
   uint8_t  hop_faits[3][MD_LIGNES_TABLE];
   uint8_t  vol;            // le volume de la ligne, avant la table
 
+  // ── LES DEUX EMPLACEMENTS D'EFFET ─────────────────────────────────────
+  // 0 = la colonne CMD (la lettre), 1 = la colonne MD CMD (le code). Les deux
+  // tournent EN MEME TEMPS : une ligne peut porter un vibrato à la lettre et
+  // un glissando au code, comme dans DefleMask. Un seul emplacement aurait
+  // obligé l'une des deux colonnes à écraser l'autre.
+  uint8_t  eff[2];         // MD_E_*
+  uint8_t  effval[2];
+  int8_t   vol_delta;      // ce que les glissandos et le trémolo retirent
+  uint8_t  vib_prof;       // profondeur posée par W, si elle l'a été
+  uint8_t  retrig;         // compteur de R
+  uint8_t  hop_ph[MD_LIGNES_PHRASE];   // les tours faits par chaque H de phrase
+
   // ── LES TROIS MACROS PSG ──────────────────────────────────────────────
   // Un pas par tick, comme la table, mais elles appartiennent à
   // l'instrument : c'est la macro de volume qui donne son enveloppe à un
@@ -93,6 +105,15 @@ typedef struct {
 
 static voie_t voies[MD_CANAUX];
 
+static uint8_t vol_global = 15;   // M, commun à tout le morceau
+
+// ⚠️ J ET N NE S'EXÉCUTENT PAS AU MILIEU D'UNE LIGNE. Sauter pendant qu'une
+// voie a déjà joué et pas les autres les désynchroniserait. On note la
+// demande, et on la satisfait quand la ligne est finie — pour toutes les voies
+// à la fois.
+static uint8_t saut_demande, saut_vise;
+static uint8_t rupture_demandee, rupture_ligne;
+
 // L'adresse d'une ligne de table dans le morceau.
 static uint32_t table_base(uint8_t tab, int lig) {
   return MD_OFF_TABLES
@@ -105,6 +126,10 @@ static uint32_t table_base(uint8_t tab, int lig) {
 // arrêt. On relançait la lecture et la voie repartait avec les restes de la
 // précédente — au mieux un désaccord, au pire une voie muette.
 static void voie_remet_a_zero(voie_t *v) {
+  v->eff[0] = v->eff[1] = MD_E_RIEN;
+  v->effval[0] = v->effval[1] = 0;
+  v->vol_delta = 0; v->vib_prof = 0; v->retrig = 0;
+  for (int k = 0; k < MD_LIGNES_PHRASE; k++) v->hop_ph[k] = 0;
   v->cmd = MD_VIDE; v->cmdval = 0; v->phase = 0;
   v->fin = 0; v->cible = 0; v->coupe = 0;
   v->retard = 0;
@@ -319,6 +344,11 @@ void md_lecture_demarre(int ligne_song) {
   md_z80_prepare();   // au cas où quelque chose l'aurait réinitialisé
   md_puces_init();
   ticks = 0; reste = 0;
+  // ⚠️ M vaut pour TOUT le morceau : sans cette remise, un morceau joué après
+  // un autre qui baissait le volume général démarrait déjà atténué, et on
+  // cherchait la panne dans l'instrument.
+  vol_global = 15;
+  saut_demande = 0; rupture_demandee = 0;
   mouchard_reste = 12;   // on releve les douze premieres notes PCM
 
   for (int c = 0; c < MD_CANAUX; c++) {
@@ -512,6 +542,28 @@ static void pose_hauteur(int c) {
   else md_psg_hauteur(c - 6, v->note, v->fin);
 }
 
+// ── LE VOLUME D'UNE VOIE ──────────────────────────────────────────────────
+// ⚠️ IL N'EXISTAIT PAS. La vélocité d'une ligne ne faisait rien sur les six
+// voies FM : le YM2612 n'a pas de registre de volume, il faut atténuer ses
+// opérateurs porteuses, et personne ne le faisait. Toutes les commandes de
+// volume — M, Z, B, E, F et leurs équivalents MD — n'avaient donc rien où
+// agir. Un seul endroit sait poser un volume, comme pour la hauteur.
+
+static int niveau_de(const voie_t *v) {
+  int n = (int)v->vol + v->vol_delta;
+  n = borne(n, 0, 15);
+  return n * (int)vol_global / 15;
+}
+
+static void pose_volume(int c) {
+  const voie_t *v = &voies[c];
+  if (!v->note) return;
+  if (c == MD_PCM_VOIE) return;   // le convertisseur porte son gain à part
+  if (c < 6) md_fm_volume(c, (uint8_t)niveau_de(v));
+  // Les voies PSG passent par table_pas, qui mêle enveloppe et macro : leur
+  // niveau s'y calcule déjà, et l'y écrire deux fois les ferait sauter.
+}
+
 // ── Les commandes à LETTRE, un pas par tick ───────────────────────────────
 // ⚠️ Elles ne s'exécutent PAS à la ligne, mais à chaque TICK. C'est ce qui
 // fait la différence entre un arpège et trois notes écrites : l'arpège tourne
@@ -519,6 +571,95 @@ static void pose_hauteur(int c) {
 //
 // `t` est le numéro du tick dans la ligne : zéro au moment où la ligne tombe.
 static void arme_commande(int c, const md_ligne_phrase *r);
+
+static void note_coupe(int c) {
+  voie_t *v = &voies[c];
+  if (c == MD_PCM_VOIE) md_pcm_arrete();
+  else if (c < 6)       md_fm_note_off(c);
+  else                  md_psg_note_off(c - 6);
+  v->coupe = 0; v->note = 0;
+}
+
+// ── UN EFFET, UN PAS ──────────────────────────────────────────────────────
+// Appelée pour CHACUN des deux emplacements : la lettre et le code MD y
+// passent par le même chemin, donc ils se comportent pareil par construction.
+// `t` est le numéro du tick DANS LA LIGNE — c'est lui qui donne à l'arpège sa
+// rotation et au retard son échéance.
+static void effet_tick(int c, int slot, int t) {
+  voie_t *v = &voies[c];
+  const uint8_t e = v->eff[slot], val = v->effval[slot];
+  const uint8_t x = (uint8_t)(val >> 4), y = (uint8_t)(val & 15);
+
+  switch (e) {
+    case MD_E_ARPEGE: {   // la note, puis +x, puis +y, un pas par tick
+      const int k = t % 3;
+      const int n = (int)v->note + (k == 1 ? x : (k == 2 ? y : 0));
+      if (c < 6 && c != MD_PCM_VOIE) md_fm_hauteur(c, n, v->fin);
+      else if (c >= 6 && c != 9)     md_psg_hauteur(c - 6, n, v->fin);
+      break;
+    }
+    case MD_E_VIBRATO:
+    case MD_E_VIB_VOL: {  // x la vitesse, y la profondeur
+      // Une triangulaire sur seize pas. Pas de table de sinus : elle coûterait
+      // de la ROM pour une différence qu'on n'entend pas sur un vibrato de
+      // tracker, et LSDJ lui-même n'en a pas.
+      const uint8_t prof = v->vib_prof ? v->vib_prof : y;
+      v->phase = (uint8_t)((v->phase + x) & 15);
+      const int p = (v->phase < 8) ? v->phase : (16 - v->phase);   // 0..8
+      v->fin = (int16_t)(((p - 4) * (int)prof * 4));
+      pose_hauteur(c);
+      if (e == MD_E_VIB_VOL) { v->vol_delta--; pose_volume(c); }
+      break;
+    }
+    case MD_E_PITCH:      // x monte, y descend, un pas par tick
+      v->fin = (int16_t)(v->fin + (int)x * 4 - (int)y * 4);
+      v->fin = (int16_t)borne(v->fin, -4096, 4096);
+      pose_hauteur(c);
+      break;
+    case MD_E_PORTA_HAUT:
+      v->fin = (int16_t)borne(v->fin + (int)val * 2, -4096, 4096);
+      pose_hauteur(c);
+      break;
+    case MD_E_PORTA_BAS:
+      v->fin = (int16_t)borne(v->fin - (int)val * 2, -4096, 4096);
+      pose_hauteur(c);
+      break;
+    case MD_E_PORTA_TON:
+    case MD_E_PORTA_VOL:  // on glisse vers la cible
+      if (v->cible && v->cible != v->note) {
+        const int pas = (int)val * 2;
+        const int ecart = ((int)v->cible - (int)v->note) * 256 - v->fin;
+        if (ecart > 0)      v->fin += (int16_t)((ecart < pas) ? ecart : pas);
+        else if (ecart < 0) v->fin -= (int16_t)((-ecart < pas) ? -ecart : pas);
+        pose_hauteur(c);
+      }
+      if (e == MD_E_PORTA_VOL) { v->vol_delta--; pose_volume(c); }
+      break;
+    case MD_E_TREMOLO: {  // x la vitesse, y la profondeur, sur le VOLUME
+      v->phase = (uint8_t)((v->phase + x) & 15);
+      const int p = (v->phase < 8) ? v->phase : (16 - v->phase);
+      v->vol_delta = (int8_t)(((p - 4) * (int)y) / 8);
+      pose_volume(c);
+      break;
+    }
+    case MD_E_VOL_SLIDE:  // x monte, y descend, un pas par tick
+      v->vol_delta = (int8_t)borne(v->vol_delta + (int)x - (int)y, -15, 15);
+      pose_volume(c);
+      break;
+    case MD_E_RETRIG:     // on rejoue la note tous les y ticks
+      if (y && ++v->retrig >= y) {
+        v->retrig = 0;
+        if (c < 6 && c != MD_PCM_VOIE) md_fm_note_on(c, v->note);
+        else if (c == 9) { /* le bruit se relance par sa macro */ }
+        else if (c >= 6) md_psg_note_on(c - 6, v->note, (uint8_t)(15 - niveau_de(v)));
+      }
+      break;
+    case MD_E_COUPE:      // coupure après tant de ticks
+      if (v->coupe && t >= v->coupe) note_coupe(c);
+      break;
+    default: break;
+  }
+}
 
 static void commande_tick(int c, int t) {
   voie_t *v = &voies[c];
@@ -534,53 +675,11 @@ static void commande_tick(int c, int t) {
     }
     return;
   }
-  if (v->cmd == MD_VIDE || !v->note) return;
-  const uint8_t x = (uint8_t)(v->cmdval >> 4), y = (uint8_t)(v->cmdval & 15);
-
-  switch (md_cmd_lettre(v->cmd)) {
-    case 'C': {   // arpège : la note, puis +x, puis +y, un pas par tick
-      static const uint8_t ordre[3] = {0, 1, 2};
-      const int k = ordre[t % 3];
-      const int n = (int)v->note + (k == 1 ? x : (k == 2 ? y : 0));
-      if (c < 6 && c != MD_PCM_VOIE) md_fm_hauteur(c, n, v->fin);
-      else if (c >= 6 && c != 9)     md_psg_hauteur(c - 6, n, v->fin);
-      break;
-    }
-    case 'V': {   // vibrato : x la vitesse, y la profondeur
-      // Une triangulaire sur seize pas. Pas de table de sinus : elle coûterait
-      // de la ROM pour une différence qu'on n'entend pas sur un vibrato de
-      // tracker, et LSDJ lui-même n'en a pas.
-      v->phase = (uint8_t)((v->phase + x) & 15);
-      const int p = (v->phase < 8) ? v->phase : (16 - v->phase);   // 0..8
-      v->fin = (int16_t)(((p - 4) * (int)y * 4));
-      pose_hauteur(c);
-      break;
-    }
-    case 'P':     // pitch bend : x monte, y descend, un pas par tick
-      v->fin = (int16_t)(v->fin + (int)x * 4 - (int)y * 4);
-      if (v->fin >  4096) v->fin =  4096;
-      if (v->fin < -4096) v->fin = -4096;
-      pose_hauteur(c);
-      break;
-    case 'L':     // portamento : on glisse vers la cible
-      if (v->cible && v->cible != v->note) {
-        const int pas = (int)v->cmdval * 2;
-        int ecart = ((int)v->cible - (int)v->note) * 256 - v->fin;
-        if (ecart > 0)      v->fin += (ecart < pas) ? ecart : pas;
-        else if (ecart < 0) v->fin -= (-ecart < pas) ? -ecart : pas;
-        pose_hauteur(c);
-      }
-      break;
-    case 'K':     // coupure après tant de ticks
-      if (v->coupe && t >= v->coupe) {
-        if (c == MD_PCM_VOIE) md_pcm_arrete();
-        else if (c < 6) md_fm_note_off(c);
-        else md_psg_note_off(c - 6);
-        v->coupe = 0; v->note = 0;
-      }
-      break;
-    default: break;
-  }
+  if (!v->note) return;
+  // Les DEUX emplacements avancent, la lettre puis le code : c'est l'ordre
+  // d'affichage, donc celui qu'on lit sur l'écran.
+  for (int s = 0; s < 2; s++)
+    if (v->eff[s] != MD_E_RIEN) effet_tick(c, s, t);
 }
 
 // ── Les commandes MD ──────────────────────────────────────────────────────
@@ -641,7 +740,12 @@ static void joue(int c) {
   // Retarder une note veut dire ne pas la jouer maintenant. On garde donc la
   // ligne entière de côté et on la rejouera au bon tick — sinon on jouerait
   // la note puis on la « retarderait », ce qui ne veut rien dire.
-  if (r.cmd != MD_VIDE && md_cmd_lettre(r.cmd) == 'D' && r.val) {
+  const int retarde =
+      (r.cmd != MD_VIDE   && md_cmd_effet(r.cmd) == MD_E_RETARD && r.val) ||
+      (r.mdcmd != MD_VIDE && md_mdcmd_effet(r.mdcmd) == MD_E_RETARD && r.mdval);
+  if (retarde) {
+    const uint8_t valeur =
+        (r.cmd != MD_VIDE && md_cmd_effet(r.cmd) == MD_E_RETARD) ? r.val : r.mdval;
     // ⚠️ LE RETARD DOIT TOMBER DANS LA LIGNE. Il était pris tel quel : un D20
     // sur une ligne de six ticks attendait un instant qui n'arrivait jamais,
     // et comme commande_tick sort tant qu'un report est en cours, LA VOIE
@@ -651,58 +755,127 @@ static void joue(int c) {
     const uint8_t vit = md_song_vitesse();
     const uint8_t max = (uint8_t)(vit > 1 ? vit - 1 : 1);
     v->differee = r;
-    v->retard = (r.val > max) ? max : r.val;
+    v->retard = (valeur > max) ? max : valeur;
     return;
   }
 
-  joue_note(c, &r);
+  // ── L : LA NOTE ÉCRITE EST UNE CIBLE, PAS UNE ATTAQUE ─────────────────
+  // ⚠️ Elle était jouée comme les autres : on entendait la note d'arrivée
+  // tout de suite, puis un glissando qui ne glissait plus vers rien. Un
+  // portamento garde la note en cours et la tire vers celle qui est écrite.
+  const int e0 = (r.cmd != MD_VIDE) ? md_cmd_effet(r.cmd) : MD_E_RIEN;
+  const int e1 = (r.mdcmd != MD_VIDE) ? md_mdcmd_effet(r.mdcmd) : MD_E_RIEN;
+  const int porta = (e0 == MD_E_PORTA_TON || e0 == MD_E_PORTA_VOL
+                     || e1 == MD_E_PORTA_TON || e1 == MD_E_PORTA_VOL);
+
+  if (porta && v->note && r.note && r.note != MD_VIDE) {
+    v->cible = (uint8_t)borne((int)r.note + v->transpose, 1, 108);
+    if (r.instr) v->instr = r.instr;
+  } else {
+    joue_note(c, &r);
+  }
   arme_commande(c, &r);
   if (r.mdcmd != MD_VIDE) commande_md(c, r.mdcmd, r.mdval);
 }
 
 // Ce qu'une ligne fait de sa commande : les unes agissent TOUT DE SUITE, les
 // autres s'installent pour être déroulées tick après tick.
-static void arme_commande(int c, const md_ligne_phrase *r) {
+// ── UN EFFET, ARMÉ ────────────────────────────────────────────────────────
+// Les uns agissent TOUT DE SUITE et n'ont rien à dérouler — poser un tempo,
+// un panoramique, un saut. Les autres s'installent dans leur emplacement et
+// tournent tick après tick. C'est la seule différence, et elle se lit ici.
+static void arme_effet(int c, int slot, int effet, uint8_t val) {
   voie_t *v = &voies[c];
-  if (r->cmd == MD_VIDE) {
-    // ⚠️ Une ligne SANS commande annule celle d'avant, et remet la hauteur
-    // droite. Sans ça un vibrato posé une fois durerait tout le morceau.
-    if (v->cmd != MD_VIDE) { v->cmd = MD_VIDE; v->fin = 0; pose_hauteur(c); }
-    return;
-  }
-  const uint8_t val = r->val;
-  const char le = md_cmd_lettre(r->cmd);
+  v->eff[slot] = MD_E_RIEN;
 
-  // La cible d'un portamento est la note ÉCRITE : elle ne doit donc pas
-  // avoir été jouée. joue_note l'a déjà posée, on la reprend d'où l'on vient.
-  if (le == 'L') { v->cible = v->note; v->note = v->cible; }
-  else if (le != 'V' && le != 'P') v->fin = 0;
-
-  switch (le) {
-    case 'S':   // vitesse : ticks par ligne
+  switch (effet) {
+    case MD_E_RIEN:
+      return;
+    case MD_E_VITESSE:
       if (val) md_song_pose_vitesse(val);
       return;
-    case 'T':   // tempo, en BPM
+    case MD_E_TEMPO:
       if (val) md_song_pose_bpm(val);
       return;
-    case 'O':   // panoramique : 0 centre, 1 gauche, 2 droite
+    case MD_E_VOL_GLOBAL:
+      // Le volume général du morceau, 0-15. Il multiplie celui de chaque voie.
+      vol_global = (uint8_t)borne(val, 0, 15);
+      for (int k = 0; k < 6; k++)
+        if (voies[k].actif && voies[k].note) pose_volume(k);
+      return;
+    case MD_E_PAN:
       if (c < 6 && c != MD_PCM_VOIE) {
         const uint8_t ins = v->instr ? v->instr : 1;
         const uint32_t b = MD_OFF_INSTR + (uint32_t)(ins - 1) * MD_INSTR_OCTETS;
         md_fm_pose_pan(c, val, md_lit(b + 46) & 3, md_lit(b + 47) & 7);
       }
       return;
-    case 'A':   // attacher une table à la voie, pour cette note
+    case MD_E_TABLE:
       if (val < MD_MAX_TABLES) { v->table = val; table_remet_a_zero(v); }
       return;
-    case 'K':   // coupure après tant de ticks
+    case MD_E_VIB_PROF:
+      // W ne fait pas de vibrato : il REGLE la profondeur que V emploiera.
+      v->vib_prof = (uint8_t)(val & 15);
+      return;
+    case MD_E_FINE:
+      // Un désaccord fin, en seizièmes de demi-ton, centré sur 8.
+      v->fin = (int16_t)(((int)(val & 15) - 8) * 16);
+      pose_hauteur(c);
+      return;
+    case MD_E_SAUT:
+      // On demande le saut ; il se fera à la fin de la ligne, pas au milieu.
+      saut_vise = val; saut_demande = 1;
+      return;
+    case MD_E_RUPTURE:
+      // La ligne de SONG suivante, en commençant à la ligne demandée.
+      rupture_ligne = (uint8_t)(val & (MD_LIGNES_PHRASE - 1));
+      rupture_demandee = 1;
+      return;
+    case MD_E_COUPE:
       v->coupe = val ? val : 1;
       break;
-    default: break;
+    case MD_E_PORTA_TON:
+    case MD_E_PORTA_VOL:
+      // La cible est posée par joue(), qui sait s'il y avait une note sur la
+      // ligne. L'écraser ici la remplacerait par la note en cours, et le
+      // glissando n'aurait plus nulle part où aller.
+      break;
+    case MD_E_VIBRATO:
+    case MD_E_VIB_VOL:
+    case MD_E_PITCH:
+      break;          // ceux-là gardent le désaccord en cours
+    default:
+      v->fin = 0;     // les autres repartent d'une hauteur droite
+      break;
   }
-  v->cmd = r->cmd;
-  v->cmdval = val;
+  v->eff[slot] = (uint8_t)effet;
+  v->effval[slot] = val;
   v->phase = 0;
+  v->retrig = 0;
+}
+
+static void arme_commande(int c, const md_ligne_phrase *r) {
+  voie_t *v = &voies[c];
+
+  // ⚠️ Une ligne SANS commande annule celle d'avant, et remet la hauteur et
+  // le volume droits. Sans ça un vibrato posé une fois durerait tout le
+  // morceau.
+  if (r->cmd == MD_VIDE && r->mdcmd == MD_VIDE) {
+    if (v->eff[0] != MD_E_RIEN || v->eff[1] != MD_E_RIEN) {
+      v->eff[0] = v->eff[1] = MD_E_RIEN;
+      v->fin = 0; v->vol_delta = 0;
+      pose_hauteur(c); pose_volume(c);
+    }
+    return;
+  }
+
+  // Les deux colonnes arment CHACUNE son emplacement. Le HOP n'en est pas un :
+  // il ne se déroule pas, il déplace une position, et c'est avance() qui s'en
+  // occupe.
+  const int e0 = (r->cmd != MD_VIDE) ? md_cmd_effet(r->cmd) : MD_E_RIEN;
+  const int e1 = (r->mdcmd != MD_VIDE) ? md_mdcmd_effet(r->mdcmd) : MD_E_RIEN;
+  arme_effet(c, 0, (e0 == MD_E_HOP || e0 == MD_E_RETARD) ? MD_E_RIEN : e0, r->val);
+  arme_effet(c, 1, (e1 == MD_E_RETARD) ? MD_E_RIEN : e1, r->mdval);
 }
 
 static void joue_note(int c, const md_ligne_phrase *pr) {
@@ -742,6 +915,9 @@ static void joue_note(int c, const md_ligne_phrase *pr) {
     v->env_niv = (int16_t)((a0 == MD_VIDE ? 15 : (a0 > 15 ? 15 : a0)) * 256);
     v->env_vif = 1; }
   v->vol = (r.vel != MD_VIDE) ? (uint8_t)((r.vel * 15) / 0x7F) : 15;
+  // ⚠️ Le désaccord et l'atténuation d'une note précédente ne se reportent
+  // pas sur celle-ci : une nouvelle note repart droite et à son volume.
+  v->vol_delta = 0;
 
   if (est_pcm(c, ins)) {
     // L'échantillon vit en ROM : 47 Ko pour le seul morceau de référence, là
@@ -772,10 +948,11 @@ static void joue_note(int c, const md_ligne_phrase *pr) {
     // on aura MESURÉ que ça coûte trop cher.
     md_fm_charge(c, base);
     md_fm_note_on(c, (uint8_t)n);
+    // La VÉLOCITÉ, enfin. Elle atténue les porteuses de l'algorithme en cours ;
+    // md_fm_volume sait lesquelles le sont. Posée APRÈS le chargement, sinon
+    // l'instrument la réécrirait avec ses propres Total Level.
+    pose_volume(c);
   } else {
-    // ⚠️ La vélocité ne pilote QUE le PSG pour l'instant. Sur le YM2612 elle
-    // devrait atténuer les porteuses de l'algorithme en cours, ce qui demande
-    // de savoir lesquelles le sont — ça viendra avec les effets de volume.
     uint8_t vol = 15;
     if (r.vel != MD_VIDE) vol = (uint8_t)((r.vel * 15) / 0x7F);
     if (c == 9) {
@@ -793,6 +970,32 @@ static void avance(int c) {
   // Une ligne finie n'a plus rien en attente : un report ou une coupure qui
   // n'ont pas trouvé leur tick ne doivent pas déborder sur la ligne suivante.
   v->retard = 0; v->coupe = 0;
+
+  // ── N : on quitte la phrase tout de suite ─────────────────────────────
+  if (rupture_demandee) {
+    v->chain_ligne++;
+    if (!cale_phrase(c)) { v->actif = 0; return; }
+    v->phrase_ligne = (uint8_t)(rupture_ligne & (MD_LIGNES_PHRASE - 1));
+    return;
+  }
+
+  // ── H : on saute au lieu d'avancer ────────────────────────────────────
+  // Mêmes chiffres que dans une table : combien de fois, puis vers quelle
+  // ligne. Le compteur est indexé par la ligne qui porte le H, donc deux
+  // boucles imbriquées comptent chacune ses tours.
+  { md_ligne_phrase r;
+    md_phrase_lit(v->phrase, v->phrase_ligne, &r);
+    if (r.cmd != MD_VIDE && md_cmd_effet(r.cmd) == MD_E_HOP) {
+      const int lig = v->phrase_ligne & (MD_LIGNES_PHRASE - 1);
+      const int fois = (r.val >> 4) & 15, but = r.val & 15;
+      if (fois == 0) { v->phrase_ligne = (uint8_t)but; return; }
+      if (v->hop_ph[lig] < fois) {
+        v->hop_ph[lig]++; v->phrase_ligne = (uint8_t)but; return;
+      }
+      v->hop_ph[lig] = 0;   // boucle finie : on passe à la suite
+    }
+  }
+
   v->phrase_ligne++;
   if (v->phrase_ligne < MD_LIGNES_PHRASE) return;
 
@@ -1047,6 +1250,18 @@ void md_lecture_tick(void) {
     if (ticks >= vitesse) {
       ticks = 0;
       for (int c = 0; c < MD_CANAUX; c++) if (voies[c].actif) avance(c);
+      // La rupture a servi pour toutes les voies : elle ne vaut que ce tour.
+      rupture_demandee = 0;
+      // ⚠️ LE SAUT EN DERNIER, et il relance la lecture. Un saut de position
+      // renvoie à une AUTRE ligne de SONG : chaque voie doit y reprendre son
+      // bloc et son chain, ce que md_lecture_demarre sait déjà faire. Le
+      // rejouer coûte une réinitialisation des puces, une fois, à un endroit
+      // où la musique change de toute façon.
+      if (saut_demande) {
+        saut_demande = 0;
+        md_lecture_demarre(saut_vise);
+        return;
+      }
     }
   }
 }

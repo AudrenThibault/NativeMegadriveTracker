@@ -283,6 +283,41 @@ static const uint8_t DEC_OP[4] = {0, 8, 4, 12};
 // doit donc savoir ce qu'il y a dedans. On garde le souvenir de ce que la
 // dernière voix y a mis, voie par voie et opérateur par opérateur.
 static uint8_t vu_detune[6][4], vu_rs[6][4];
+// ── DE QUOI RÉGLER LE VOLUME D'UNE VOIE FM ────────────────────────────────
+// Le YM2612 n'a pas de registre de volume : on atténue les OPÉRATEURS
+// PORTEUSES, et lesquels le sont dépend de l'algorithme. Il faut donc garder
+// sous la main le Total Level d'origine de chaque opérateur — sinon chaque
+// changement de volume s'ajouterait au précédent et la voix s'éteindrait
+// définitivement — et l'algorithme en cours.
+static uint8_t vu_tl[6][4], vu_alg[6];
+
+// Bit 0 = OP1 … bit 3 = OP4. Les huit algorithmes du YM2612.
+static const uint8_t PORTEUSES[8] = {
+  0x8, 0x8, 0x8, 0x8, 0xA, 0xE, 0xE, 0xF
+};
+
+// Volume 0-15 vers atténuation 0-63. Reprise de la table du projet DS, prise
+// de seize en seize : elle est logarithmique, parce que l'oreille l'est. Une
+// rampe droite passait presque tout son chemin dans les trois derniers crans.
+static const uint8_t VOL_ATT[16] = {
+  63, 16, 12, 9, 8, 6, 5, 4, 4, 3, 2, 2, 1, 1, 0, 0
+};
+
+// niveau 0-15, 15 = le volume écrit dans l'instrument.
+void md_fm_volume(int voie, uint8_t niveau) {
+  if (voie < 0 || voie >= 6) return;
+  const uint8_t masque = PORTEUSES[vu_alg[voie] & 7];
+  const int sup = ((int)VOL_ATT[niveau & 15] * 127) / 63;
+  const int banc = voie / 3, i = voie % 3;
+  md_bus_prend();
+  for (int op = 0; op < 4; op++) {
+    if (!(masque & (1u << op))) continue;
+    int tl = (int)vu_tl[voie][op] + sup;
+    if (tl > 127) tl = 127;
+    md_ym_ecrit(banc, (uint8_t)(0x40 + DEC_OP[op] + i), (uint8_t)tl);
+  }
+  md_bus_rend();
+}
 uint8_t md_fm_detune_vu(int voie, int op) {
   return (voie >= 0 && voie < 6 && op >= 0 && op < 4) ? vu_detune[voie][op] : 0;
 }
@@ -309,7 +344,10 @@ void md_fm_charge(int voie, uint32_t base) {
     const uint8_t am      = md_lit(o + 9) & 1;
     const uint8_t ssg     = md_lit(o + 10) & 15;
 
-    if (voie >= 0 && voie < 6) { vu_detune[voie][op] = detune; vu_rs[voie][op] = rs; }
+    if (voie >= 0 && voie < 6) {
+      vu_detune[voie][op] = detune; vu_rs[voie][op] = rs;
+      vu_tl[voie][op] = tl;   // le TL de RÉFÉRENCE, celui de l'instrument
+    }
     md_ym_ecrit(banc, (uint8_t)(0x30 + d + i), (uint8_t)((detune << 4) | mul));
     md_ym_ecrit(banc, (uint8_t)(0x40 + d + i), tl);
     md_ym_ecrit(banc, (uint8_t)(0x50 + d + i),
@@ -329,6 +367,7 @@ void md_fm_charge(int voie, uint32_t base) {
   const uint8_t pan = md_lit(base + 50);
 
   md_ym_ecrit(banc, (uint8_t)(0xB0 + i), (uint8_t)((fb << 3) | alg));
+  if (voie >= 0 && voie < 6) vu_alg[voie] = alg & 7;
   // Panoramique : 0 = centre, 1 = gauche, 2 = droite. Une voie sans aucun
   // côté actif est INAUDIBLE — l'erreur classique quand cet octet vaut zéro
   // par accident, et on cherche longtemps une panne de séquenceur.
@@ -435,12 +474,18 @@ void md_fm_frequence(int voie, uint8_t note) {
 // cours ; la note suivante recharge la voix et efface l'effet. C'est ce qu'on
 // veut — sinon une commande abîmerait le patch pour tout le morceau.
 void md_fm_pose_alg_fb(int voie, uint8_t alg, uint8_t fb) {
+  // Changer d'algorithme change QUI est porteuse : le volume suivant doit
+  // atténuer les bons opérateurs.
+  if (voie >= 0 && voie < 6) vu_alg[voie] = alg & 7;
   const int banc = voie / 3, i = voie % 3;
   md_ym_ecrit(banc, (uint8_t)(0xB0 + i), (uint8_t)(((fb & 7) << 3) | (alg & 7)));
 }
 
 void md_fm_pose_tl(int voie, int op, uint8_t tl) {
   if (op < 0 || op > 3) return;
+  // Un TL posé à la main devient la nouvelle référence : sinon le prochain
+  // réglage de volume le remplacerait par celui de l'instrument.
+  if (voie >= 0 && voie < 6) vu_tl[voie][op] = tl & 127;
   const int banc = voie / 3, i = voie % 3;
   md_ym_ecrit(banc, (uint8_t)(0x40 + DEC_OP[op] + i), (uint8_t)(tl & 127));
 }
