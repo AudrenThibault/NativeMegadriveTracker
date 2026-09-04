@@ -16,11 +16,11 @@
 //
 //  ⚠️ TERME ADDITIONNEL, AU TITRE DE L'ARTICLE 7(b) DE LA GPL v3 :
 //  vous devez conserver, dans le code source ET dans les avis légaux affichés
-//  par le programme (la page HELP), la mention de l'auteur « Audren Thibault »
+//  par le programme (la page ABOUT), la mention de l'auteur « Audren Thibault »
 //  et l'adresse du dépôt d'origine ci-dessus.
 //
 //  L'article 5(d) impose déjà qu'une version modifiée continue d'afficher les
-//  avis légaux ; l'article 7(b) y ajoute le nom et le lien. Voir AIDE[] plus
+//  avis légaux ; l'article 7(b) y ajoute le nom et le lien. Voir APROPOS[] plus
 //  bas — on peut y ajouter des lignes, on n'en retire pas.
 // ============================================================================
 // ============================================================================
@@ -46,7 +46,7 @@
 #include "banque_pcm.h"
 #include "morceaux_rom.h"
 
-enum { PAGE_AIDE = 7 };
+enum { PAGE_APROPOS = 7 };
 enum { PAGE_SONG = 0, PAGE_CHAIN = 1, PAGE_PHRASE = 2,
        PAGE_INSTR = 3, PAGE_TABLE = 4, PAGE_PROJECT = 5,
        PAGE_FICHIER = 6 };
@@ -917,10 +917,10 @@ static void table_dessine(void) {
 // morceau particulier était un second chemin, contraire à la règle — et la
 // démo n'a jamais été demandée. Un morceau versé depuis le Mac apparaît dans
 // la liste comme les autres, marqué ROM.
-enum { PJ_BPM = 0, PJ_NOUVEAU, PJ_FICHIER, PJ_AIDE, PJ_NOMBRE };
+enum { PJ_BPM = 0, PJ_NOUVEAU, PJ_FICHIER, PJ_APROPOS, PJ_NOMBRE };
 
 static const char *PROJ_NOMS[PJ_NOMBRE] = {
-  "BPM", "NEW SONG", "LOAD/SAVE SONG", "HELP"
+  "BPM", "NEW SONG", "LOAD/SAVE SONG", "ABOUT"
 };
 
 static int message_reste;
@@ -1131,7 +1131,7 @@ static void rom_vers_bibliotheque(void) {
   }
 }
 
-// ── LA PAGE HELP ──────────────────────────────────────────────────────────
+// ── LA PAGE ABOUT ──────────────────────────────────────────────────────────
 // ⚠️ CE QUI EST ÉCRIT ICI N'EST PAS DÉCORATIF, C'EST L'AVIS LÉGAL.
 //
 // La GNU GPL version 3 dit, article 5(d) : si le programme affiche des
@@ -1142,7 +1142,7 @@ static void rom_vers_bibliotheque(void) {
 // En retirer le nom, le lien ou l'avis de garantie revient donc à sortir des
 // termes sous lesquels ce code est distribué. On peut ajouter des lignes
 // ici ; on n'en enlève pas.
-static const char *AIDE[] = {
+static const char *APROPOS[] = {
   "GENETRACKER",
   "A MUSIC TRACKER THAT RUNS ON THE",
   "SEGA MEGA DRIVE.",
@@ -1167,13 +1167,13 @@ static const char *AIDE[] = {
   "B  BACK"
 };
 
-static void aide_dessine(void) {
-  md_ecran_texte(0, 0, MD_TITRE, "HELP");
-  for (int i = 0; i < (int)(sizeof(AIDE) / sizeof(AIDE[0])); i++)
+static void apropos_dessine(void) {
+  md_ecran_texte(0, 0, MD_TITRE, "ABOUT");
+  for (int i = 0; i < (int)(sizeof(APROPOS) / sizeof(APROPOS[0])); i++)
     md_ecran_texte(2, 3 + i,
                    (i == 0) ? MD_ACCENT : (i == 4 || i == 6 || i == 7)
                               ? MD_TITRE : MD_DATA,
-                   AIDE[i]);
+                   APROPOS[i]);
 }
 
 static void fichier_dessine(void) {
@@ -1488,7 +1488,7 @@ static void redessine_page(void) {
   else if (page == PAGE_INSTR)   instr_dessine();
   else if (page == PAGE_TABLE)   table_dessine();
   else if (page == PAGE_PROJECT) projet_dessine();
-  else if (page == PAGE_AIDE)    aide_dessine();
+  else if (page == PAGE_APROPOS)    apropos_dessine();
   else                           fichier_dessine();
 }
 
@@ -1501,7 +1501,7 @@ static void dessine_tout(void) {
   else if (page == PAGE_INSTR)   instr_dessine();
   else if (page == PAGE_TABLE)   table_dessine();
   else if (page == PAGE_PROJECT) projet_dessine();
-  else if (page == PAGE_AIDE)    aide_dessine();
+  else if (page == PAGE_APROPOS)    apropos_dessine();
   else                           fichier_dessine();
   if (nom_ouvert) nom_dessine();
   if (efface_demande >= 0) efface_dessine();
@@ -1830,8 +1830,8 @@ static void pose(void) {
     // leur ligne, jamais par un appui de trop ailleurs.
     if (projet_ligne == PJ_NOUVEAU) { md_song_vide(); modifie_depuis = 1;
                                       dit_message("NEW SONG"); }
-    else if (projet_ligne == PJ_AIDE) { retour_fichier = PAGE_PROJECT;
-                                        page = PAGE_AIDE; }
+    else if (projet_ligne == PJ_APROPOS) { retour_fichier = PAGE_PROJECT;
+                                        page = PAGE_APROPOS; }
     else if (projet_ligne == PJ_FICHIER) {
       retour_fichier = PAGE_PROJECT;
       page = PAGE_FICHIER;
@@ -2345,7 +2345,7 @@ void principal(void) {
     // Depuis la liste il ramène à la rangée LOAD/SAVE/ERASE ; depuis cette
     // rangée il quitte l'écran. B ne sert à rien d'autre ici, contrairement
     // aux pages de séquence où il copie.
-    if ((frappes & MD_B) && page == PAGE_AIDE) {
+    if ((frappes & MD_B) && page == PAGE_APROPOS) {
       page = PAGE_PROJECT; redessiner = 1; b_utilise = 1;
     }
     if ((frappes & MD_B) && page == PAGE_FICHIER) {

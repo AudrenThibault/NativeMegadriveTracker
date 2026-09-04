@@ -24,6 +24,62 @@ c'est celle qu'on a dans les doigts.
 - **Échanger** avec le tracker DS frère : les morceaux voyagent dans les deux
   sens, échantillons compris.
 
+## Les commandes
+
+Trois boutons, et **A joue le rôle du SELECT de LSDJ** : c'est le modificateur
+qui fait voyager entre les écrans.
+
+### Se déplacer
+
+| Geste | Ce qu'il fait |
+|---|---|
+| Croix | déplacer le curseur |
+| **A + droite** | descendre d'un écran : SONG → CHAIN → PHRASE → INSTRUMENT → TABLE |
+| **A + gauche** | remonter |
+| **A + haut** | aller à l'écran PROJECT |
+| **A + bas** | en revenir |
+| **B + haut / bas** | sauter de seize lignes, dans SONG |
+| START | lancer et arrêter la lecture, depuis n'importe quel écran |
+
+### Éditer
+
+| Geste | Ce qu'il fait |
+|---|---|
+| **C** | poser une valeur dans la case vide |
+| **C + droite / gauche** | augmenter, diminuer d'un cran |
+| **C + haut / bas** | par grands pas |
+| **B + C** | effacer la case (dans les deux ordres) |
+
+### Copier, coller, cloner
+
+| Geste | Ce qu'il fait |
+|---|---|
+| **A + B** | armer une sélection — ensuite la croix l'étend, le curseur reste sur l'ancre |
+| **B** | copier la sélection |
+| **A + C** | coller. Sur SONG le collage **insère** : ce qui est dessous descend |
+| **A + B puis C** | clonage profond — le chain et ses phrases sont dupliqués dans des emplacements neufs |
+
+### Couper une voie
+
+| Geste | Ce qu'il fait |
+|---|---|
+| **B tenu, puis A** | couper la voie sous le curseur, dans SONG |
+| **B** | la rallumer |
+
+L'ordre compte : A puis B arme une sélection, B puis A coupe la voie. Une voie
+coupée continue d'avancer dans le morceau sans sonner — elle se rallume donc
+en place, sans décalage. Son nom s'affiche en vidéo inverse dans l'en-tête.
+
+### Enregistrer
+
+`PROJECT → LOAD/SAVE SONG`. On arrive toujours sur **LOAD**, une pression à
+droite mène à **SAVE**, une deuxième à **ERASE** — qui demande confirmation.
+En SAVE, le curseur se pose sur la ligne du morceau en cours et son nom est
+déjà écrit : `C`, `C`, `C` enregistrent une version plus récente.
+
+Dans la fenêtre de nom, la croix se promène sur la grille de lettres, `C` pose
+le caractère, `<` efface, `OK` valide, `B` annule.
+
 ## Construire
 
 Un seul prérequis :
@@ -78,7 +134,7 @@ Copyright (C) 2026 Audren Thibault
 Ce programme est distribué **sans aucune garantie**. Vous êtes libre de le
 redistribuer et de le modifier selon les termes de la GPL v3.
 
-La page **HELP** du tracker porte l'avis légal. L'article 5(d) de la GPL v3
+La page **ABOUT** du tracker porte l'avis légal. L'article 5(d) de la GPL v3
 demande qu'une version modifiée continue de l'afficher.
 
 ## Termes additionnels (article 7 de la GPL v3)
@@ -87,7 +143,7 @@ L'article 7(b) de la licence permet d'exiger la préservation d'attributions
 d'auteur. Ce projet s'en sert, et c'est la seule condition ajoutée :
 
 > **Vous devez conserver, dans le code source et dans les avis légaux affichés
-> par le programme (la page HELP), la mention de l'auteur « Audren Thibault »
+> par le programme (la page ABOUT), la mention de l'auteur « Audren Thibault »
 > et l'adresse du dépôt d'origine
 > `https://github.com/AudrenThibault/NativeMegadriveTracker`.**
 
