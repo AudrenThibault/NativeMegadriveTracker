@@ -68,5 +68,18 @@ Ce programme est distribué **sans aucune garantie**. Vous êtes libre de le
 redistribuer et de le modifier selon les termes de la GPL v3.
 
 La page **HELP** du tracker porte l'avis légal. L'article 5(d) de la GPL v3
-demande qu'une version modifiée continue de l'afficher : si vous publiez un
-dérivé, gardez cette page et le lien vers ce dépôt.
+demande qu'une version modifiée continue de l'afficher.
+
+## Termes additionnels (article 7 de la GPL v3)
+
+L'article 7(b) de la licence permet d'exiger la préservation d'attributions
+d'auteur. Ce projet s'en sert, et c'est la seule condition ajoutée :
+
+> **Vous devez conserver, dans le code source et dans les avis légaux affichés
+> par le programme (la page HELP), la mention de l'auteur « Audren Thibault »
+> et l'adresse du dépôt d'origine
+> `https://github.com/AudrenThibault/NativeMegadriveTracker`.**
+
+Autrement dit : faites-en ce que vous voulez, modifiez, redistribuez, vendez
+même — mais **le nom et le lien restent**, dans les fichiers comme à l'écran.
+

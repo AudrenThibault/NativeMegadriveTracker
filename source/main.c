@@ -14,9 +14,14 @@
 //  Vous devriez avoir reçu une copie de la licence avec ce programme : c'est
 //  le fichier LICENSE. Sinon : https://www.gnu.org/licenses/
 //
-//  ⚠️ LA PAGE HELP PORTE L'AVIS LÉGAL, et ce n'est pas décoratif : l'article
-//  5(d) de la GPL v3 impose qu'une version modifiée continue de l'afficher.
-//  Voir AIDE[] plus bas.
+//  ⚠️ TERME ADDITIONNEL, AU TITRE DE L'ARTICLE 7(b) DE LA GPL v3 :
+//  vous devez conserver, dans le code source ET dans les avis légaux affichés
+//  par le programme (la page HELP), la mention de l'auteur « Audren Thibault »
+//  et l'adresse du dépôt d'origine ci-dessus.
+//
+//  L'article 5(d) impose déjà qu'une version modifiée continue d'afficher les
+//  avis légaux ; l'article 7(b) y ajoute le nom et le lien. Voir AIDE[] plus
+//  bas — on peut y ajouter des lignes, on n'en retire pas.
 // ============================================================================
 // ============================================================================
 //  GeneTracker — un tracker qui tourne sur la Mega Drive.
@@ -1154,6 +1159,10 @@ static const char *AIDE[] = {
   "UNDER ITS TERMS. THE FULL LICENCE",
   "IS IN THE FILE NAMED LICENSE, IN",
   "THE SOURCE REPOSITORY ABOVE.",
+  "",
+  "GPL 7(B) TERM : KEEP THE AUTHOR",
+  "NAME AND THE LINK ABOVE, IN THE",
+  "SOURCE AND ON THIS PAGE.",
   "",
   "B  BACK"
 };
