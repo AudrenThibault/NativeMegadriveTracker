@@ -1143,7 +1143,7 @@ static void rom_vers_bibliotheque(void) {
 // termes sous lesquels ce code est distribué. On peut ajouter des lignes
 // ici ; on n'en enlève pas.
 static const char *APROPOS[] = {
-  "GENETRACKER MD",
+  "GENETRACKERMD",
   "A MUSIC TRACKER THAT RUNS ON THE",
   "SEGA MEGA DRIVE.",
   "",
