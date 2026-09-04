@@ -3,7 +3,8 @@
 
     bibliotheque.py verser <a.mdm> [b.mdm…]      DS -> Mega Drive
            UNE ROM PAR MORCEAU : geneTrackerTUTU.bin, geneTrackerFABA.bin…
-    bibliotheque.py vierge                       la ROM NUE, celle qu'on publie
+    bibliotheque.py vierge [a.mdm ...]           la ROM qu'on publie : pas de
+           morceau, mais la banque d'echantillons des .mdm donnes
     bibliotheque.py lire   <sauvegarde>          ce que contient la cartouche
     bibliotheque.py sortir <sauvegarde> <dossier> [d.mdm]   Mega Drive -> DS
            (le .mdm facultatif prete sa banque ; sinon c'est celle de la
@@ -543,8 +544,14 @@ def cmd_verser(sources):
         faites.append(rom + ".bin")
     print(f"  {len(faites)} ROM(s) : " + ", ".join(faites))
 
-def cmd_vierge():
-    """Fabrique la ROM NUE : le tracker, sans aucun morceau ni echantillon.
+def cmd_vierge(sources=()):
+    """Fabrique la ROM de PUBLICATION : le tracker, sans aucun morceau.
+
+    ⚠️ SANS MORCEAU, MAIS AVEC DES ECHANTILLONS. Un tracker qui s'ouvre sur une
+    banque vide ne peut rien faire entendre en PCM tant qu'on n'a pas branche
+    un Mac : la voie reste muette et on croit a une panne. On y met donc la
+    banque par defaut — les percussions — en passant les .mdm d'ou elle vient.
+    Le MORCEAU, lui, ne part jamais : il est personnel.
 
     ⚠️ C'EST CELLE QU'ON PUBLIE. Une ROM qui porte les morceaux de quelqu'un
     est un outil personnel, pas une release : elle impose ses sons a qui la
@@ -576,8 +583,16 @@ def cmd_vierge():
         g.write("const uint32_t morceaux_rom_offset[MORCEAUX_ROM_MAX] = {%s};\n\n"
                 % ",".join("0" for _ in range(ROM_MORCEAUX_MAX)))
         g.write("const uint8_t morceaux_rom_data[MORCEAUX_ROM_CAPACITE] = {0};\n")
-    ecrit_banque(os.path.join(racine, 'source', 'banque_pcm.h'), [], [], b'')
-    print("  ROM nue : aucun morceau, aucun echantillon")
+    if sources:
+        banque, entrees, places, _ = banque_commune(list(sources))
+        n = sum(1 for p_ in places if p_ is not None)
+        print(f"  ROM de publication : aucun morceau, {n} echantillons "
+              f"({len(banque)} octets)")
+    else:
+        banque, entrees, places = b'', [], []
+        print("  ROM de publication : aucun morceau, aucun echantillon")
+    ecrit_banque(os.path.join(racine, 'source', 'banque_pcm.h'),
+                 entrees, places, banque)
     r = subprocess.run([os.path.join(racine, 'build.sh')], cwd=racine,
                        capture_output=True, text=True)
     for l in (r.stdout + r.stderr).splitlines():
@@ -665,8 +680,8 @@ def cmd_sortir(chemin, dossier, source=None):
 
 def main():
     # « vierge » ne prend aucun argument : elle ne fabrique que la ROM nue.
-    if len(sys.argv) == 2 and sys.argv[1] == 'vierge':
-        cmd_vierge(); return
+    if len(sys.argv) >= 2 and sys.argv[1] == 'vierge':
+        cmd_vierge(sys.argv[2:]); return
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
     verbe, chemin = sys.argv[1], sys.argv[2]

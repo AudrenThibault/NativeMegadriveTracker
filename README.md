@@ -24,6 +24,52 @@ one your fingers already know.
   console is switched off (FRAM, no battery).
 - **Exchanges songs** with its Nintendo DS sibling, samples included.
 
+## Three machines, one format
+
+GeneTracker exists on three platforms, and **songs move between all of them**:
+
+| Platform | Name | Where |
+|---|---|---|
+| Sega Mega Drive | **GeneTrackerMD** | this repository |
+| Nintendo DS | **GeneTrackerDS** | [github.com/AudrenThibault/MDTrackerDS](https://github.com/AudrenThibault/MDTrackerDS) |
+| iPad | **GeneTracker** | coming to the App Store |
+
+They are independent projects — code is copied between them, never referenced
+— and the only contract they share is the **`.mdm` song format**. A song
+written on one opens on the others, samples included.
+
+### Moving a song between machines
+
+The tool lives here, in `outils/bibliotheque.py`. It speaks to the Mega Drive
+cartridge; the DS and the iPad read and write `.mdm` files directly.
+
+**From a computer to the Mega Drive** — this builds a ROM carrying the song,
+which you then load on the console:
+
+```sh
+python3 outils/bibliotheque.py verser SONG.MDM
+```
+
+**From the Mega Drive back to a `.mdm`** — the songs you saved on the console
+live in the cartridge's save memory, which the EverDrive writes to
+`EDMD/SAVE/<rom name>.bin` when you switch the console off:
+
+```sh
+python3 outils/bibliotheque.py lire   "EDMD/SAVE/GeneTrackerMD.bin"
+python3 outils/bibliotheque.py sortir "EDMD/SAVE/GeneTrackerMD.bin" out/ SONG.MDM
+```
+
+`lire` lists what the cartridge holds; `sortir` writes each song out as a
+`.mdm`. The last argument lends the sample bank to the exported file, so it
+opens on the other machines with the right sounds.
+
+**Careful:** the ROM only ever contains what you put in it from a computer.
+Anything you wrote *on the console* is in the save file, not in the ROM.
+
+The DS can also read a GeneTrackerMD ROM directly and pull the project out of
+it, without a computer — that is what the `GENETRK-PLAN01` descriptor below is
+for.
+
 ## Controls
 
 Three buttons, and **A plays the role of LSDJ's SELECT**: it is the modifier
