@@ -1,157 +1,151 @@
 # GeneTrackerMD
 
-Un tracker de musique qui tourne **sur la Sega Mega Drive** — pas un éditeur
-sur ordinateur qui exporte vers la console, mais le tracker lui-même, manette
-en main, sur la machine.
+A music tracker that runs **on the Sega Mega Drive** — not a desktop editor
+that exports to the console, but the tracker itself, gamepad in hand, on the
+machine.
 
-Dix voies : six FM du YM2612, trois de ton et une de bruit du SN76489, et une
-voie PCM qui remplace la sixième FM quand on lui donne un échantillon.
+Ten voices: six FM channels from the YM2612, three tone channels and one noise
+channel from the SN76489, plus a PCM voice that replaces the sixth FM channel
+when you give it a sample.
 
-L'ergonomie est celle de LSDJ — song, chains, phrases, tables — parce que
-c'est celle qu'on a dans les doigts.
+The workflow is LSDJ's — song, chains, phrases, tables — because that is the
+one your fingers already know.
 
-## Ce qu'il sait faire
+## What it does
 
-- **Séquencer** sur les dix voies, avec l'enchaînement song → chain → phrase.
-- **Éditer les instruments FM** : les quatre opérateurs, leurs onze paramètres,
-  l'algorithme, le feedback, le LFO.
-- **Jouer des échantillons PCM de n'importe quelle longueur.** Le Z80 les lit
-  directement dans la cartouche et enchaîne les banques tout seul — un
-  échantillon d'une seconde passe sans hoquet.
-- **Macros PSG** — volume, arpège, grain de bruit — et enveloppe à trois points.
-- **Enregistrer** dans la mémoire de la cartouche : seize emplacements,
-  conservés à l'extinction (FRAM, pas de pile).
-- **Échanger** avec le tracker DS frère : les morceaux voyagent dans les deux
-  sens, échantillons compris.
+- **Sequences** all ten voices, through the song → chain → phrase chain.
+- **Edits FM instruments**: four operators, their eleven parameters, algorithm,
+  feedback, LFO.
+- **Plays PCM samples of any length.** The Z80 reads them straight from the
+  cartridge and walks the bank window on its own — a one-second sample plays
+  without a hiccup.
+- **PSG macros** — volume, arpeggio, noise mode — and a three-point envelope.
+- **Saves** into the cartridge's own memory: sixteen slots, kept when the
+  console is switched off (FRAM, no battery).
+- **Exchanges songs** with its Nintendo DS sibling, samples included.
 
-## Les commandes
+## Controls
 
-Trois boutons, et **A joue le rôle du SELECT de LSDJ** : c'est le modificateur
-qui fait voyager entre les écrans.
+Three buttons, and **A plays the role of LSDJ's SELECT**: it is the modifier
+that moves you between screens.
 
-### Se déplacer
+### Moving around
 
-| Geste | Ce qu'il fait |
+| Input | What it does |
 |---|---|
-| Croix | déplacer le curseur |
-| **A + droite** | descendre d'un écran : SONG → CHAIN → PHRASE → INSTRUMENT → TABLE |
-| **A + gauche** | remonter |
-| **A + haut** | aller à l'écran PROJECT |
-| **A + bas** | en revenir |
-| **B + haut / bas** | sauter de seize lignes, dans SONG |
-| START | lancer et arrêter la lecture, depuis n'importe quel écran |
+| D-pad | move the cursor |
+| **A + right** | go one screen down: SONG → CHAIN → PHRASE → INSTRUMENT → TABLE |
+| **A + left** | go back up |
+| **A + up** | open the PROJECT screen |
+| **A + down** | leave it |
+| **B + up / down** | jump sixteen rows, in SONG |
+| START | start and stop playback, from any screen |
 
-### Éditer
+### Editing
 
-| Geste | Ce qu'il fait |
+| Input | What it does |
 |---|---|
-| **C** | poser une valeur dans la case vide |
-| **C + droite / gauche** | augmenter, diminuer d'un cran |
-| **C + haut / bas** | par grands pas |
-| **B + C** | effacer la case (dans les deux ordres) |
+| **C** | put a value in an empty cell |
+| **C + right / left** | step the value up, down |
+| **C + up / down** | step it in large increments |
+| **B + C** | clear the cell (either order) |
 
-### Copier, coller, cloner
+### Copy, paste, clone
 
-| Geste | Ce qu'il fait |
+| Input | What it does |
 |---|---|
-| **A + B** | armer une sélection — ensuite la croix l'étend, le curseur reste sur l'ancre |
-| **B** | copier la sélection |
-| **A + C** | coller. Sur SONG le collage **insère** : ce qui est dessous descend |
-| **A + B puis C** | clonage profond — le chain et ses phrases sont dupliqués dans des emplacements neufs |
+| **A + B** | arm a selection — the D-pad then extends it, the cursor stays on the anchor |
+| **B** | copy the selection |
+| **A + C** | paste. In SONG the paste **inserts**: everything below moves down |
+| **A + B then C** | deep clone — the chain and its phrases are duplicated into fresh slots |
 
-### Couper une voie
+### Muting a voice
 
-| Geste | Ce qu'il fait |
+| Input | What it does |
 |---|---|
-| **B tenu, puis A** | couper la voie sous le curseur, dans SONG |
-| **B** | la rallumer |
+| **hold B, then A** | mute the voice under the cursor, in SONG |
+| **B** | unmute it |
 
-L'ordre compte : A puis B arme une sélection, B puis A coupe la voie. Une voie
-coupée continue d'avancer dans le morceau sans sonner — elle se rallume donc
-en place, sans décalage. Son nom s'affiche en vidéo inverse dans l'en-tête.
+Order matters: A then B arms a selection, B then A mutes. A muted voice keeps
+advancing through the song without sounding, so it comes back in place, with
+no drift. Its name is shown inverted in the header.
 
-### Enregistrer
+### Saving
 
-`PROJECT → LOAD/SAVE SONG`. On arrive toujours sur **LOAD**, une pression à
-droite mène à **SAVE**, une deuxième à **ERASE** — qui demande confirmation.
-En SAVE, le curseur se pose sur la ligne du morceau en cours et son nom est
-déjà écrit : `C`, `C`, `C` enregistrent une version plus récente.
+`PROJECT → LOAD/SAVE SONG`. You always arrive on **LOAD**; one press right
+reaches **SAVE**, a second **ERASE** — which asks for confirmation. In SAVE
+the cursor lands on the row of the song you are working on, with its name
+already filled in: `C`, `C`, `C` writes a newer version.
 
-Dans la fenêtre de nom, la croix se promène sur la grille de lettres, `C` pose
-le caractère, `<` efface, `OK` valide, `B` annule.
+In the name window, the D-pad walks the letter grid, `C` types, `<` deletes,
+`OK` confirms, `B` cancels.
 
-## Construire
+## Building
 
-Un seul prérequis :
+One prerequisite:
 
 ```sh
 brew install m68k-elf-gcc
 ```
 
-Puis, pour fabriquer une ROM contenant un morceau :
+Then, to build a ROM carrying a song:
 
 ```sh
 python3 outils/bibliotheque.py verser morceaux/TUTU.MDM
 ```
 
-Cette commande reconstruit la banque d'échantillons, compile la ROM, et la
-dépose sur la carte SD de l'EverDrive si elle est montée. `./build.sh` seul
-compile sans changer le morceau embarqué — utile pour vérifier que ça compile,
-pas pour tester un morceau.
+That rebuilds the sample bank, compiles the ROM, and drops it on the
+EverDrive's SD card if it is mounted. `./build.sh` on its own compiles without
+changing the embedded song — useful to check that it still builds, not to test
+a song.
 
-Pour la **ROM nue**, celle qu'on publie — le tracker seul, sans aucun morceau
-ni échantillon :
+For the **bare ROM**, the one that gets published — the tracker alone, with no
+song and no samples:
 
 ```sh
 python3 outils/bibliotheque.py vierge
 ```
 
-Elle s'ouvre sur un projet vide et enregistre dans les seize emplacements de
-la cartouche comme n'importe quelle autre : les sauvegardes vivent dans la
-FRAM, pas dans la ROM.
+It opens on an empty project and saves into the cartridge's sixteen slots like
+any other build: saves live in FRAM, not in the ROM.
 
-## La ROM porte son plan
+## The ROM carries its own map
 
-Une ROM GeneTrackerMD contient un descripteur repérable par la marque
-`GENETRK-PLAN01` : il dit où vivent les morceaux et la banque d'échantillons,
-et quelle place leur est réservée. C'est ce qui permet à un autre outil — le
-tracker DS, par exemple — d'écrire dans l'image **sans recompiler**.
+A GeneTrackerMD ROM holds a descriptor marked `GENETRK-PLAN01`: it says where
+the songs and the sample bank live, and how much room is reserved for them.
+That is what lets another tool — the DS tracker, for instance — write into the
+image **without recompiling it**.
 
-## Matériel
+## Hardware
 
-Développé et vérifié sur une **Mega Drive PAL** avec une **EverDrive MD V3**.
-La mise au point s'appuie sur un banc d'essai qui fait tourner la ROM dans un
-cœur d'émulation sans écran, relève le son et l'image, et sur un journal que le
-tracker écrit lui-même dans sa mémoire de sauvegarde — c'est ainsi que les
-défauts ont été trouvés, plutôt qu'en devinant.
+Developed and verified on a **PAL Mega Drive** with an **EverDrive MD V3**.
+Debugging leans on a test bench that runs the ROM inside a headless emulator
+core and captures both sound and picture, and on a log the tracker writes into
+its own save memory — that is how the defects were found, rather than guessed.
 
 ## Licence
 
-GNU General Public License version 3 — voir [LICENSE](LICENSE).
-
-GeneTrackerMD fait partie d'une famille : **GeneTracker** sur iPad,
-**GeneTrackerMD** ici, **GeneTrackerDS** sur Nintendo DS. Les trois sont des
-projets indépendants — le code se copie entre eux, jamais ne se référence —
-et **la licence de ce dépôt ne couvre que la version Mega Drive**.
+GNU General Public License version 3 — see [LICENSE](LICENSE).
 
 Copyright (C) 2026 Audren Thibault
 
-Ce programme est distribué **sans aucune garantie**. Vous êtes libre de le
-redistribuer et de le modifier selon les termes de la GPL v3.
+This program comes with **absolutely no warranty**. You are free to
+redistribute and modify it under the terms of the GPL v3.
 
-La page **ABOUT** du tracker porte l'avis légal. L'article 5(d) de la GPL v3
-demande qu'une version modifiée continue de l'afficher.
+GeneTrackerMD belongs to a family: **GeneTracker** on iPad, **GeneTrackerMD**
+here, **GeneTrackerDS** on the Nintendo DS. The three are independent projects
+— code is copied between them, never referenced — and **the licence of this
+repository covers the Mega Drive version only**.
 
-## Termes additionnels (article 7 de la GPL v3)
+### Additional term (GPL v3, section 7)
 
-L'article 7(b) de la licence permet d'exiger la préservation d'attributions
-d'auteur. Ce projet s'en sert, et c'est la seule condition ajoutée :
+Section 7(b) of the licence allows an author to require that attribution be
+preserved. This project uses it, and it is the only condition added:
 
-> **Vous devez conserver, dans le code source et dans les avis légaux affichés
-> par le programme (la page ABOUT), la mention de l'auteur « Audren Thibault »
-> et l'adresse du dépôt d'origine
+> **You must keep, in the source code and in the legal notices the program
+> displays (the ABOUT page), the author credit "Audren Thibault" and the
+> address of the original repository
 > `https://github.com/AudrenThibault/NativeMegadriveTracker`.**
 
-Autrement dit : faites-en ce que vous voulez, modifiez, redistribuez, vendez
-même — mais **le nom et le lien restent**, dans les fichiers comme à l'écran.
-
+In other words: do what you like with it, modify it, redistribute it, even
+sell it — but **the name and the link stay**, in the files as on screen.
