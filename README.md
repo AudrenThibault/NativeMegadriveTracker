@@ -1,4 +1,4 @@
-# GeneTracker
+# GeneTrackerMD
 
 Un tracker de musique qui tourne **sur la Sega Mega Drive** — pas un éditeur
 sur ordinateur qui exporte vers la console, mais le tracker lui-même, manette
@@ -112,7 +112,7 @@ FRAM, pas dans la ROM.
 
 ## La ROM porte son plan
 
-Une ROM GeneTracker contient un descripteur repérable par la marque
+Une ROM GeneTrackerMD contient un descripteur repérable par la marque
 `GENETRK-PLAN01` : il dit où vivent les morceaux et la banque d'échantillons,
 et quelle place leur est réservée. C'est ce qui permet à un autre outil — le
 tracker DS, par exemple — d'écrire dans l'image **sans recompiler**.
@@ -128,6 +128,11 @@ défauts ont été trouvés, plutôt qu'en devinant.
 ## Licence
 
 GNU General Public License version 3 — voir [LICENSE](LICENSE).
+
+GeneTrackerMD fait partie d'une famille : **GeneTracker** sur iPad,
+**GeneTrackerMD** ici, **GeneTrackerDS** sur Nintendo DS. Les trois sont des
+projets indépendants — le code se copie entre eux, jamais ne se référence —
+et **la licence de ce dépôt ne couvre que la version Mega Drive**.
 
 Copyright (C) 2026 Audren Thibault
 

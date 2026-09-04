@@ -1,5 +1,5 @@
 // ============================================================================
-//  GeneTracker — un tracker de musique qui tourne sur la Sega Mega Drive.
+//  GeneTrackerMD — un tracker de musique qui tourne sur la Sega Mega Drive.
 //  Copyright (C) 2026 Audren Thibault
 //  https://github.com/AudrenThibault/NativeMegadriveTracker
 //
@@ -1143,7 +1143,7 @@ static void rom_vers_bibliotheque(void) {
 // termes sous lesquels ce code est distribué. On peut ajouter des lignes
 // ici ; on n'en enlève pas.
 static const char *APROPOS[] = {
-  "GENETRACKER",
+  "GENETRACKER MD",
   "A MUSIC TRACKER THAT RUNS ON THE",
   "SEGA MEGA DRIVE.",
   "",

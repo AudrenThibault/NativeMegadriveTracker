@@ -58,7 +58,7 @@ m68k-elf-objcopy -O binary build/geneTracker.elf "$ROM.bin"
 # 512 Ko : la banque d'echantillons embarquee en pese a elle seule plus de
 # 200 Ko, et il n'y a pas d'autre endroit ou la mettre — la cartouche n'ouvre
 # pas sa carte SD a une ROM lancee comme un jeu.
-python3 outils/entete.py "$ROM.bin" "GENETRACKER" "GM GENETRK0-00" 524288 200001:20FFFF
+python3 outils/entete.py "$ROM.bin" "GENETRACKER MD" "GM GENETRK0-00" 524288 200001:20FFFF
 
 # Si la carte SD de la cartouche est montée, la ROM va DIRECTEMENT dessus :
 # sinon on recopie à la main à chaque essai et on finit par tester une version
