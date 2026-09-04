@@ -37,3 +37,8 @@ source/banque_pcm.h
 source/morceaux_rom.c
 source/morceaux_rom.h
 source/pilote_pcm.h
+
+# La ROM de release est une SORTIE de build : elle se refait avec
+#   python3 outils/bibliotheque.py vierge
+# Le binaire publie vit sur la page Releases de GitHub, pas dans le depot.
+release/*.bin

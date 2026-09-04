@@ -109,6 +109,9 @@ python3 outils/bibliotheque.py vierge
 It opens on an empty project and saves into the cartridge's sixteen slots like
 any other build: saves live in FRAM, not in the ROM.
 
+The built ROM lands in `release/`. That directory is not tracked — the binary
+belongs on the Releases page, not in the repository.
+
 ## The ROM carries its own map
 
 A GeneTrackerMD ROM holds a descriptor marked `GENETRK-PLAN01`: it says where
