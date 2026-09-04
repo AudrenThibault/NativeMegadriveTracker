@@ -158,3 +158,15 @@ int md_cmd_effet(int rang) {
 int md_mdcmd_effet(int rang) {
   return (rang < 0 || rang >= MD_MDCMD_NOMBRE) ? MD_E_RIEN : EFFET_CODE[rang];
 }
+
+int md_effet_continu(int e) {
+  switch (e) {
+    case MD_E_ARPEGE: case MD_E_PORTA_HAUT: case MD_E_PORTA_BAS:
+    case MD_E_PORTA_TON: case MD_E_VIBRATO: case MD_E_PORTA_VOL:
+    case MD_E_VIB_VOL: case MD_E_TREMOLO: case MD_E_VOL_SLIDE:
+    case MD_E_RETRIG: case MD_E_PITCH:
+      return 1;
+    default:
+      return 0;   // une coupure, un retard : ils valent pour leur ligne
+  }
+}

@@ -69,6 +69,11 @@ void md_lecture_audition_stop(void);
 // JOUENT, sans attendre la note suivante.
 void md_lecture_instr_maj(uint8_t ins);
 
+// Remet la vitesse, le tempo et le volume général sur ce que dit le morceau.
+// À appeler dès qu'on touche une colonne de commande : faire défiler les
+// commandes les pose toutes au passage, et il faut pouvoir revenir.
+void md_lecture_reglages_remet(void);
+
 // La note a laquelle un echantillon joue a sa vitesse naturelle. Copie
 // VIVANTE de la banque ROM : reglable, mais perdue a l'extinction.
 uint8_t md_pcm_note(int si);

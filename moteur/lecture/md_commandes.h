@@ -64,6 +64,13 @@ enum {
   MD_E_TEMPO, MD_E_VITESSE, MD_E_VOL_GLOBAL, MD_E_PAN,
   MD_E_TABLE, MD_E_HOP, MD_E_PITCH
 };
+// Un effet CONTINU survit au changement de ligne : un pitch bend, un vibrato,
+// un arpege continuent de tourner jusqu'a ce qu'on les arrete, comme dans LSDJ
+// et comme sur la DS (md_effect_is_continuous). Sans ca un glissando
+// s'interrompt sechement au bout d'une ligne. On l'arrete en reecrivant la
+// meme commande avec la valeur 00.
+int md_effet_continu(int effet);
+
 int md_cmd_effet(int rang);     // colonne CMD, par le rang de la lettre
 int md_mdcmd_effet(int rang);   // colonne MD CMD, par le rang du code
 

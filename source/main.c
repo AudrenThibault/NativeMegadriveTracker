@@ -2117,6 +2117,9 @@ static void modifie(int sens, int grand) {
     else if (table_col == 6)
       md_ecrit(o, (uint8_t)borne((int)v + sens, 0, MD_MDCMD_NOMBRE - 1));
     else md_ecrit(o, (uint8_t)((int)v + sens * pas_ici));
+    // Même raison que sur la page PHRASE : défiler les commandes les pose au
+    // passage, il faut pouvoir revenir de celles qui règlent le tempo.
+    md_lecture_reglages_remet();
     table_case(table_ligne);
   } else if (page == PAGE_PROJECT) {
     if (projet_ligne == PJ_BPM) {
@@ -2148,14 +2151,24 @@ static void modifie(int sens, int grand) {
       // ⚠️ La borne est le NOMBRE RÉEL de commandes, pas 47 : au-delà on
       // posait un rang qui n'existe dans aucune table, et il ne se passait
       // évidemment rien.
-      case 3: if (r.cmd != MD_VIDE)
+      // ⚠️ On DÉFAIT avant de poser. Faire défiler les commandes les applique
+      // toutes au passage : sans ça, être passé sur SET SPEED laissait le
+      // morceau à la vitesse qui traînait dans la case, et la commande
+      // suivante n'y changeait rien.
+      case 3: if (r.cmd != MD_VIDE) {
                 r.cmd = (uint8_t)borne((int)r.cmd + sens * pas, 0, MD_CMD_NOMBRE - 1);
+                md_lecture_reglages_remet();
+              }
               break;
-      case 4: r.val = (uint8_t)borne((int)r.val + sens * pas, 0, 255); break;
-      case 5: if (r.mdcmd != MD_VIDE)
+      case 4: r.val = (uint8_t)borne((int)r.val + sens * pas, 0, 255);
+              md_lecture_reglages_remet(); break;
+      case 5: if (r.mdcmd != MD_VIDE) {
                 r.mdcmd = (uint8_t)borne((int)r.mdcmd + sens * pas, 0, MD_MDCMD_NOMBRE - 1);
+                md_lecture_reglages_remet();
+              }
               break;
-      case 6: r.mdval = (uint8_t)borne((int)r.mdval + sens * pas, 0, 255); break;
+      case 6: r.mdval = (uint8_t)borne((int)r.mdval + sens * pas, 0, 255);
+              md_lecture_reglages_remet(); break;
     }
     md_phrase_pose(phrase_id, phrase_ligne, &r);
   }

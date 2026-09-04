@@ -121,6 +121,21 @@ typedef struct {
 
 static voie_t voies[MD_CANAUX];
 
+// La vitesse pour laquelle la cadence est calée. Un morceau à cette vitesse-là
+// sonne au tempo écrit ; au-dessus il ralentit, en dessous il accélère.
+#define MD_VITESSE_REF 6
+
+// ⚠️ LA VITESSE ET LE TEMPO DE LA LECTURE, PAS CEUX DU MORCEAU.
+// S et T écrivaient DANS le morceau. Trois conséquences, toutes mauvaises :
+// le morceau était modifié sans qu'on l'ait demandé, rien ne permettait de
+// revenir en arrière, et faire défiler les commandes avec C posait un « SET
+// SPEED » avec la valeur qui traînait dans la case — d'où un tracker qui
+// semblait figé et qu'on ne pouvait plus rattraper. Ces deux valeurs vivent
+// maintenant dans le lecteur : elles repartent du morceau à chaque lecture, et
+// arrêter puis relancer suffit à tout remettre droit.
+static uint8_t  vitesse_jeu = 6;
+static uint16_t bpm_jeu = 125;
+
 static uint8_t vol_global = 15;   // M, commun à tout le morceau
 
 // ⚠️ J ET N NE S'EXÉCUTENT PAS AU MILIEU D'UNE LIGNE. Sauter pendant qu'une
@@ -348,6 +363,24 @@ static int cale_phrase(int c) {
   return 0;
 }
 
+// ⚠️ CHANGER DE COMMANDE DOIT DÉFAIRE CE QUE LA PRÉCÉDENTE A FAIT.
+// En faisant défiler les commandes avec C on les POSE toutes au passage :
+// « SET SPEED » avec la valeur qui traînait dans la case laissait le morceau
+// à une vitesse absurde, et rien ne permettait d'y revenir. L'éditeur appelle
+// donc ceci dès qu'il touche une colonne de commande : le tempo, la vitesse et
+// le volume général reprennent ce qui est écrit dans le morceau.
+static void pose_volume(int c);
+
+void md_lecture_reglages_remet(void) {
+  vitesse_jeu = md_song_vitesse();
+  if (vitesse_jeu < 1 || vitesse_jeu > 31) vitesse_jeu = 6;
+  bpm_jeu = md_song_bpm();
+  if (bpm_jeu < 20 || bpm_jeu > 400) bpm_jeu = 125;
+  vol_global = 15;
+  for (int c = 0; c < 6; c++)
+    if (voies[c].actif && voies[c].note) pose_volume(c);
+}
+
 void md_lecture_init(void) {
   md_puces_init();
 #ifdef MD_HORS_CONSOLE
@@ -367,6 +400,12 @@ void md_lecture_demarre(int ligne_song) {
   // un autre qui baissait le volume général démarrait déjà atténué, et on
   // cherchait la panne dans l'instrument.
   vol_global = 15;
+  // La lecture repart du tempo ÉCRIT dans le morceau : ce qu'un S ou un T
+  // avaient changé ne survit pas à un arrêt.
+  vitesse_jeu = md_song_vitesse();
+  if (vitesse_jeu < 1 || vitesse_jeu > 31) vitesse_jeu = 6;
+  bpm_jeu = md_song_bpm();
+  if (bpm_jeu < 20 || bpm_jeu > 400) bpm_jeu = 125;
   saut_demande = 0; rupture_demandee = 0;
   mouchard_reste = 12;   // on releve les douze premieres notes PCM
 
@@ -632,8 +671,16 @@ static void effet_pas(int c, int e, uint8_t val, int t) {
       break;
     }
     case MD_E_PITCH:      // x monte, y descend, un pas par tick
-      v->fin = (int16_t)(v->fin + (int)x * 4 - (int)y * 4);
-      v->fin = (int16_t)borne(v->fin, -4096, 4096);
+      // ⚠️ LE PAS EST DIX FOIS PLUS GRAND QU'AVANT. Il valait x*4, soit
+      // 4/256 de demi-ton par tick : « P5- » mettait plus d'une seconde à
+      // monter d'un demi-ton, là où LSDJ y met quelques ticks. Le désaccord
+      // se compte en 256e de demi-ton (voir md_fm_hauteur), donc x*40 donne
+      // à P1- un huitième de demi-ton par tick et à PF- deux demi-tons.
+      v->fin = (int16_t)(v->fin + (int)x * 40 - (int)y * 40);
+      // Et la butée passe de seize demi-tons à quarante-huit : à cette
+      // vitesse-là, l'ancienne était atteinte en une demi-seconde et le bend
+      // s'arrêtait tout seul au milieu.
+      v->fin = (int16_t)borne(v->fin, -12288, 12288);
       pose_hauteur(c);
       break;
     case MD_E_PORTA_HAUT:
@@ -817,10 +864,12 @@ static int effet_immediat(int c, int effet, uint8_t val) {
     case MD_E_RIEN:
       return 1;
     case MD_E_VITESSE:
-      if (val) md_song_pose_vitesse(val);
+      // Bornée : au-delà, une ligne dure si longtemps que le morceau paraît
+      // arrêté, et on croit à un plantage.
+      if (val) vitesse_jeu = (uint8_t)borne(val, 1, 31);
       return 1;
     case MD_E_TEMPO:
-      if (val) md_song_pose_bpm(val);
+      if (val) bpm_jeu = (uint16_t)borne(val, 20, 400);
       return 1;
     case MD_E_VOL_GLOBAL:
       // Le volume général du morceau, 0-15. Il multiplie celui de chaque voie.
@@ -914,32 +963,36 @@ static void arme_effet(int c, int slot, int effet, uint8_t val) {
 
 static void arme_commande(int c, const md_ligne_phrase *r) {
   voie_t *v = &voies[c];
-
-  // ⚠️ Une ligne SANS commande annule celle d'avant, et remet la hauteur et
-  // le volume droits. Sans ça un vibrato posé une fois durerait tout le
-  // morceau.
-  if (r->cmd == MD_VIDE && r->mdcmd == MD_VIDE) {
-    if (v->eff[0] != MD_E_RIEN || v->eff[1] != MD_E_RIEN) {
-      v->eff[0] = v->eff[1] = MD_E_RIEN;
-      // ⚠️ On ne remet la hauteur et le volume droits QUE si la table n'a
-      // rien à dire : sinon désarmer la phrase effacerait le vibrato que la
-      // table est en train de jouer.
-      if (v->eff[2] == MD_E_RIEN && v->eff[3] == MD_E_RIEN
-          && v->eff[4] == MD_E_RIEN) {
-        v->fin = 0; v->vol_delta = 0;
-        pose_hauteur(c); pose_volume(c);
-      }
-    }
-    return;
-  }
-
-  // Les deux colonnes arment CHACUNE son emplacement. Le HOP n'en est pas un :
-  // il ne se déroule pas, il déplace une position, et c'est avance() qui s'en
-  // occupe.
   const int e0 = (r->cmd != MD_VIDE) ? md_cmd_effet(r->cmd) : MD_E_RIEN;
   const int e1 = (r->mdcmd != MD_VIDE) ? md_mdcmd_effet(r->mdcmd) : MD_E_RIEN;
-  arme_effet(c, 0, (e0 == MD_E_HOP || e0 == MD_E_RETARD) ? MD_E_RIEN : e0, r->val);
-  arme_effet(c, 1, (e1 == MD_E_RETARD) ? MD_E_RIEN : e1, r->mdval);
+
+  // ── UN EFFET CONTINU SURVIT AU CHANGEMENT DE LIGNE ───────────────────
+  // ⚠️ C'est la convention de LSDJ, et celle du projet DS
+  // (md_effect_is_continuous). Un arpège, un vibrato, un pitch bend
+  // continuent de tourner jusqu'à ce qu'on les arrête ; sans ça un arpège
+  // écrit sur une ligne s'arrêtait net à la ligne suivante, ce qui n'est
+  // jamais ce qu'on veut. On l'arrête en réécrivant LA MÊME commande avec
+  // la valeur 00.
+  for (int s = 0; s < 2; s++) {
+    const int neuf_e = (s == 0) ? e0 : e1;
+    const uint8_t neuve_v = (s == 0) ? r->val : r->mdval;
+    if (!md_effet_continu(v->eff[s])) {
+      v->eff[s] = MD_E_RIEN; v->effval[s] = 0;
+    } else if (neuf_e == (int)v->eff[s] && neuve_v == 0) {
+      v->eff[s] = MD_E_RIEN; v->effval[s] = 0;
+      // On repart droit : c'est ce que veut dire « arrêter ».
+      v->fin = 0; v->vol_delta = 0;
+      pose_hauteur(c); pose_volume(c);
+    }
+  }
+
+  // Une colonne vide ne dit rien : elle laisse en place ce qui tourne.
+  // Le HOP n'est pas un effet — il déplace une position, et avance() s'en
+  // charge ; le RETARD non plus — joue() l'a déjà mis de côté.
+  if (e0 != MD_E_RIEN && e0 != MD_E_HOP && e0 != MD_E_RETARD)
+    arme_effet(c, 0, e0, r->val);
+  if (e1 != MD_E_RIEN && e1 != MD_E_RETARD)
+    arme_effet(c, 1, e1, r->mdval);
 }
 
 static void joue_note(int c, const md_ligne_phrase *pr) {
@@ -1358,16 +1411,32 @@ void md_lecture_position(uint8_t *song, uint8_t *chain, uint8_t *phrase,
 void md_lecture_tick(void) {
   if (!en_cours) return;
 
-  uint8_t vitesse = md_song_vitesse();
-  if (vitesse < 1) vitesse = 6;
-  int bpm = md_song_bpm();
-  if (bpm < 20) bpm = 125;
+  uint8_t vitesse = vitesse_jeu;
+  if (vitesse < 1 || vitesse > 31) vitesse = 6;
+  int bpm = bpm_jeu;
+  if (bpm < 20 || bpm > 400) bpm = 125;
 
-  // Ticks par seconde = BPM x lignes_par_temps x vitesse / 60. On accumule le
-  // numérateur à chaque image et on retire le dénominateur à chaque tick : la
-  // cadence est exacte en moyenne, et elle ne dépend pas de la région.
-  reste += bpm * MD_LIGNES_PAR_TEMPS * vitesse;
+  // Ticks par seconde = BPM x lignes_par_temps x VITESSE DE RÉFÉRENCE / 60.
+  // On accumule le numérateur à chaque image et on retire le dénominateur à
+  // chaque tick : la cadence est exacte en moyenne, et elle ne dépend pas de
+  // la région.
+  //
+  // ⚠️ LA CADENCE NE SUIT PLUS `vitesse`, ET C'EST TOUT L'INTÉRÊT DE S.
+  // Elle la suivait : une ligne durait alors `vitesse` ticks à une cadence
+  // `vitesse` fois plus rapide, donc toujours la MÊME durée — et S ne changeait
+  // rien au tempo, seulement la finesse des tables. Sur la DS comme dans
+  // DefleMask, `vitesse` est le nombre de ticks par ligne à cadence fixe :
+  // monter la vitesse RALENTIT. On fixe donc la référence à 6, la valeur par
+  // défaut, pour qu'un morceau écrit à 6 sonne exactement comme avant.
+  reste += bpm * MD_LIGNES_PAR_TEMPS * MD_VITESSE_REF;
+  // ⚠️ UN GARDE-FOU SUR LE NOMBRE DE TICKS PAR IMAGE. Quoi qu'il arrive au
+  // tempo, on ne rend jamais la main plus tard qu'une poignée de ticks : une
+  // valeur aberrante doit faire une musique fausse, jamais une console qui ne
+  // répond plus. Le reste est jeté avec elle, sinon il s'accumulerait et la
+  // prochaine image paierait la note.
+  int garde = 16;
   while (reste >= 60 * images_par_s) {
+    if (--garde < 0) { reste = 0; break; }
     reste -= 60 * images_par_s;
 
     if (ticks == 0)
