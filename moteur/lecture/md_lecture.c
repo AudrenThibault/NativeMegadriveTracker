@@ -949,9 +949,16 @@ static void table_pas(int c) {
     md_fm_frequence(c, (uint8_t)n);
   }
 
+  // ⚠️ ON AVANCE, PUIS ON RÉSOUT LES SAUTS TOUT DE SUITE — pas au tick
+  // suivant. La position rangée ici est celle que la page TABLE affiche : la
+  // laisser se poser sur la ligne du H faisait descendre le repère jusqu'à
+  // lui avant de remonter, alors que cette ligne n'est jamais jouée. Ce qu'on
+  // entendait était juste, ce qu'on voyait ne l'était pas.
   if (a_table)
-    for (int s = 0; s < 3; s++)
+    for (int s = 0; s < 3; s++) {
       v->table_pas[s] = (uint8_t)((v->table_pas[s] + 1) & (MD_LIGNES_TABLE - 1));
+      hop_resout(v, s);
+    }
 }
 
 // ── OU EN EST LA LECTURE, POUR LE FIL D'ARIANE ────────────────────────────

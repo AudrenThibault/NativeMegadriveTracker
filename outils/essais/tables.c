@@ -94,5 +94,19 @@ int main(void) {
   printf("\n  Chaque ligne porte TSP = 10 + son numero.\n");
   pose_morceau(); pose_table(4, 0x00, 1);
   deroule("H00 en ligne 4 -> on doit voir 10..13", 16);
+
+  // ⚠️ CE QUE LE REPERE ROUGE MONTRE. La page TABLE affiche la position
+  // rangee dans la voie ; si elle se pose sur la ligne du H, le repere y
+  // descend alors que cette ligne ne se joue jamais. On le verifie ici : le 4
+  // ne doit apparaitre nulle part.
+  pose_morceau(); pose_table(4, 0x00, 1);
+  md_lecture_init(); md_lecture_demarre(0);
+  printf("  %-34s", "position montree (H en ligne 4)");
+  for (int t = 0; t < 16; t++) {
+    md_lecture_tick();
+    printf(" %d", md_lecture_table_pos(0, 1));
+  }
+  printf("\n");
+  md_lecture_arrete();
   return 0;
 }
