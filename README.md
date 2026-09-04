@@ -43,6 +43,17 @@ dépose sur la carte SD de l'EverDrive si elle est montée. `./build.sh` seul
 compile sans changer le morceau embarqué — utile pour vérifier que ça compile,
 pas pour tester un morceau.
 
+Pour la **ROM nue**, celle qu'on publie — le tracker seul, sans aucun morceau
+ni échantillon :
+
+```sh
+python3 outils/bibliotheque.py vierge
+```
+
+Elle s'ouvre sur un projet vide et enregistre dans les seize emplacements de
+la cartouche comme n'importe quelle autre : les sauvegardes vivent dans la
+FRAM, pas dans la ROM.
+
 ## La ROM porte son plan
 
 Une ROM GeneTracker contient un descripteur repérable par la marque

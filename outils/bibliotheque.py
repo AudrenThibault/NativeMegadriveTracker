@@ -3,6 +3,7 @@
 
     bibliotheque.py verser <a.mdm> [b.mdm…]      DS -> Mega Drive
            UNE ROM PAR MORCEAU : geneTrackerTUTU.bin, geneTrackerFABA.bin…
+    bibliotheque.py vierge                       la ROM NUE, celle qu'on publie
     bibliotheque.py lire   <sauvegarde>          ce que contient la cartouche
     bibliotheque.py sortir <sauvegarde> <dossier> [d.mdm]   Mega Drive -> DS
            (le .mdm facultatif prete sa banque ; sinon c'est celle de la
@@ -542,6 +543,49 @@ def cmd_verser(sources):
         faites.append(rom + ".bin")
     print(f"  {len(faites)} ROM(s) : " + ", ".join(faites))
 
+def cmd_vierge():
+    """Fabrique la ROM NUE : le tracker, sans aucun morceau ni echantillon.
+
+    ⚠️ C'EST CELLE QU'ON PUBLIE. Une ROM qui porte les morceaux de quelqu'un
+    est un outil personnel, pas une release : elle impose ses sons a qui la
+    telecharge, et elle publie un travail qui n'a pas a l'etre. Le tracker
+    seul, lui, s'ouvre sur un projet vide — ce qui est exactement ce qu'on
+    attend en le decouvrant.
+    """
+    racine = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(racine, 'source', 'morceaux_rom.h'), 'w') as g:
+        g.write("// Genere par outils/bibliotheque.py — ne pas editer.\n")
+        g.write("#ifndef MORCEAUX_ROM_H\n#define MORCEAUX_ROM_H\n"
+                "#include <stdint.h>\n\n")
+        g.write("#define MORCEAUX_ROM_MAX %d\n" % ROM_MORCEAUX_MAX)
+        g.write("#define MORCEAUX_ROM_CAPACITE %d\n\n" % ROM_MORCEAUX_OCTETS)
+        g.write("extern const uint8_t  morceaux_rom_n;\n")
+        g.write("extern const char     morceaux_rom_nom[MORCEAUX_ROM_MAX][11];\n")
+        g.write("extern const uint16_t morceaux_rom_taille[MORCEAUX_ROM_MAX];\n")
+        g.write("extern const uint32_t morceaux_rom_offset[MORCEAUX_ROM_MAX];\n")
+        g.write("extern const uint8_t  morceaux_rom_data[MORCEAUX_ROM_CAPACITE];\n")
+        g.write("\n#endif\n")
+    with open(os.path.join(racine, 'source', 'morceaux_rom.c'), 'w') as g:
+        g.write("// Genere par outils/bibliotheque.py — ne pas editer.\n")
+        g.write('#include "morceaux_rom.h"\n\n')
+        g.write("const uint8_t morceaux_rom_n = 0;\n")
+        g.write("const char morceaux_rom_nom[MORCEAUX_ROM_MAX][11] = {%s};\n"
+                % ",".join('""' for _ in range(ROM_MORCEAUX_MAX)))
+        g.write("const uint16_t morceaux_rom_taille[MORCEAUX_ROM_MAX] = {%s};\n"
+                % ",".join("0" for _ in range(ROM_MORCEAUX_MAX)))
+        g.write("const uint32_t morceaux_rom_offset[MORCEAUX_ROM_MAX] = {%s};\n\n"
+                % ",".join("0" for _ in range(ROM_MORCEAUX_MAX)))
+        g.write("const uint8_t morceaux_rom_data[MORCEAUX_ROM_CAPACITE] = {0};\n")
+    ecrit_banque(os.path.join(racine, 'source', 'banque_pcm.h'), [], [], b'')
+    print("  ROM nue : aucun morceau, aucun echantillon")
+    r = subprocess.run([os.path.join(racine, 'build.sh')], cwd=racine,
+                       capture_output=True, text=True)
+    for l in (r.stdout + r.stderr).splitlines():
+        if 'octets' in l or 'carte' in l or 'error' in l:
+            print("  " + l.strip())
+    if r.returncode:
+        raise SystemExit("la ROM n'a pas ete construite")
+
 def banque_de_la_rom():
     """Relit la banque compilée dans la ROM, pour la rendre au .mdm.
 
@@ -620,6 +664,9 @@ def cmd_sortir(chemin, dossier, source=None):
     print(f"  {n} morceau(x) sortis")
 
 def main():
+    # « vierge » ne prend aucun argument : elle ne fabrique que la ROM nue.
+    if len(sys.argv) == 2 and sys.argv[1] == 'vierge':
+        cmd_vierge(); return
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
     verbe, chemin = sys.argv[1], sys.argv[2]
@@ -629,6 +676,8 @@ def main():
         # ⚠️ « verser » ne prend PLUS de sauvegarde : il ne fabrique que des
         # ROMs. Le deuxieme argument est deja un .mdm.
         cmd_verser(sys.argv[2:])
+    elif verbe == 'vierge':
+        cmd_vierge()
     elif verbe == 'sortir':
         if len(sys.argv) < 4:
             raise SystemExit("il faut un dossier de sortie")
