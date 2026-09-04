@@ -41,7 +41,7 @@ static void pose_table(int ligne_h, uint8_t val_h, int colonne) {
   for (int l = 0; l < MD_LIGNES_TABLE; l++) {
     const uint32_t b = MD_OFF_TABLES + (uint32_t)l * MD_TABLE_OCTETS;
     m[b + 0] = 0;                 // VOL : on n'y touche pas
-    m[b + 1] = (uint8_t)l;        // TSP : la ligne se lit dans la hauteur
+    m[b + 1] = (uint8_t)(10 + l);  // TSP : 10+ligne, pour lire la ligne jouee
     m[b + 2] = MD_VIDE; m[b + 3] = 0;
     m[b + 4] = MD_VIDE; m[b + 5] = 0;
     m[b + 6] = MD_VIDE; m[b + 7] = 0;
@@ -54,6 +54,9 @@ static void pose_table(int ligne_h, uint8_t val_h, int colonne) {
 }
 
 static void deroule(const char *titre, int ticks) {
+  // Sinon la premiere valeur affichee est celle que l'essai PRECEDENT avait
+  // laissee sur la voie, et on la lit comme un resultat.
+  for (int c = 0; c < 10; c++) derniere_hauteur[c] = 49;
   md_lecture_init();
   md_lecture_demarre(0);
   printf("  %-34s", titre);
@@ -83,5 +86,13 @@ int main(void) {
 
   pose_morceau(); pose_table(3, 0x00, 2);
   deroule("H00 en colonne CMD2 (TSP libre)", 20);
+
+  // ⚠️ LA LIGNE QUI PORTE LE H NE SE JOUE PAS. Le saut est resolu AVANT de
+  // lire la ligne : on arrive sur le H, on repart, et sa propre valeur de TSP
+  // n'est jamais posee. C'est ce qu'on veut — la boucle couvre ce qui est
+  // AU-DESSUS du H, pas le H lui-meme.
+  printf("\n  Chaque ligne porte TSP = 10 + son numero.\n");
+  pose_morceau(); pose_table(4, 0x00, 1);
+  deroule("H00 en ligne 4 -> on doit voir 10..13", 16);
   return 0;
 }
