@@ -99,6 +99,22 @@ static uint32_t table_base(uint8_t tab, int lig) {
        + ((uint32_t)tab * MD_LIGNES_TABLE + (uint32_t)lig) * MD_TABLE_OCTETS;
 }
 
+// ⚠️ TOUT L'ÉTAT DE JEU D'UNE VOIE, remis à neuf. md_lecture_demarre ne
+// remettait que la note et la position : la commande en cours, son compteur,
+// le report d'un D, la coupure d'un K et le désaccord d'un P survivaient à un
+// arrêt. On relançait la lecture et la voie repartait avec les restes de la
+// précédente — au mieux un désaccord, au pire une voie muette.
+static void voie_remet_a_zero(voie_t *v) {
+  v->cmd = MD_VIDE; v->cmdval = 0; v->phase = 0;
+  v->fin = 0; v->cible = 0; v->coupe = 0;
+  v->retard = 0;
+  v->table = MD_VIDE;
+  v->mac_actif = 0; v->mac_tsp = 0;
+  v->mac_vol = MD_VIDE; v->mac_nz = MD_VIDE;
+  v->mvol_pas = v->marp_pas = v->mnz_pas = 0;
+  v->env_pt = 0; v->env_niv = 0; v->env_vif = 0;
+}
+
 static void table_remet_a_zero(voie_t *v) {
   for (int s = 0; s < 3; s++) {
     v->table_pas[s] = 0;
@@ -309,6 +325,8 @@ void md_lecture_demarre(int ligne_song) {
     voie_t *v = &voies[c];
     v->actif = 0; v->instr = 0; v->note = 0; v->transpose = 0;
     v->chain_ligne = 0; v->phrase_ligne = 0;
+    voie_remet_a_zero(v);
+    table_remet_a_zero(v);
   }
 
   if (portee == MD_PORTEE_SONG) {
@@ -624,8 +642,16 @@ static void joue(int c) {
   // ligne entière de côté et on la rejouera au bon tick — sinon on jouerait
   // la note puis on la « retarderait », ce qui ne veut rien dire.
   if (r.cmd != MD_VIDE && md_cmd_lettre(r.cmd) == 'D' && r.val) {
+    // ⚠️ LE RETARD DOIT TOMBER DANS LA LIGNE. Il était pris tel quel : un D20
+    // sur une ligne de six ticks attendait un instant qui n'arrivait jamais,
+    // et comme commande_tick sort tant qu'un report est en cours, LA VOIE
+    // RESTAIT MUETTE JUSQU'À LA FIN DU MORCEAU — plus une note, plus une
+    // commande. C'est ce qui faisait croire que les commandes ne marchaient
+    // pas : il suffisait d'un D quelque part pour tout éteindre derrière.
+    const uint8_t vit = md_song_vitesse();
+    const uint8_t max = (uint8_t)(vit > 1 ? vit - 1 : 1);
     v->differee = r;
-    v->retard = r.val;
+    v->retard = (r.val > max) ? max : r.val;
     return;
   }
 
@@ -764,6 +790,9 @@ static void joue_note(int c, const md_ligne_phrase *pr) {
 // ── Avancer d'une ligne ────────────────────────────────────────────────────
 static void avance(int c) {
   voie_t *v = &voies[c];
+  // Une ligne finie n'a plus rien en attente : un report ou une coupure qui
+  // n'ont pas trouvé leur tick ne doivent pas déborder sur la ligne suivante.
+  v->retard = 0; v->coupe = 0;
   v->phrase_ligne++;
   if (v->phrase_ligne < MD_LIGNES_PHRASE) return;
 

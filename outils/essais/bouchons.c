@@ -23,6 +23,10 @@ void md_phrase_lit(int id, int l, md_ligne_phrase *r) {
   r->mdcmd = travail_h[b+5]; r->mdval = travail_h[b+6];
 }
 static int bpm_h = 120, vit_h = 6;
+// ⚠️ A REMETTRE ENTRE DEUX ESSAIS. S et T changent le tempo POUR DE BON ; sans
+// remise a zero, l'essai suivant tourne a la vitesse que le precedent a
+// laissee et on lit ce decalage comme un effet de la commande.
+void bouchons_remet(void) { bpm_h = 120; vit_h = 6; }
 uint16_t md_song_bpm(void)        { return (uint16_t)bpm_h; }
 void md_song_pose_bpm(int v)      { bpm_h = v; }
 uint8_t md_song_vitesse(void)     { return (uint8_t)vit_h; }
@@ -88,3 +92,7 @@ const uint8_t  pcm_banque[1] = {0};
 const uint32_t pcm_offset[32] = {0};
 const uint32_t pcm_longueur[32] = {0};
 const uint8_t  pcm_note[32] = {0};
+
+void sonde(const char *f, int a, int b, int c) {
+  note_appel("[%s v%d cmd%d note%d]", f, a, b, c);
+}

@@ -12,6 +12,7 @@
 
 extern char journal[512];
 extern void journal_vide(void);
+extern void bouchons_remet(void);
 
 #define TICKS 14
 
@@ -33,6 +34,7 @@ static void pose_morceau(uint8_t voie) {
 // Rend une empreinte de ce que les puces ont recu sur `ticks` ticks.
 static void trace(uint8_t voie, char sortie[2048]) {
   sortie[0] = 0;
+  bouchons_remet();
   md_lecture_init();
   md_lecture_demarre(0);
   for (int t = 0; t < TICKS; t++) {
@@ -64,9 +66,7 @@ int main(void) {
     md_travail()[MD_OFF_PHRASES + 3] = (uint8_t)r;
     md_travail()[MD_OFF_PHRASES + 4] = 0x24;
     trace(0, avec);
-    const int agit = strcmp(avec, temoin) != 0;
-    printf("%-4c %-20s %s\n", le, md_cmd_nom(r),
-           agit ? "agit" : "AUCUN EFFET");
+    printf("%-4c %-20s %s\n", le, md_cmd_nom(r), avec);
   }
 
   printf("\nLes MD CMD (colonne MD), memes conditions :\n");
@@ -77,8 +77,7 @@ int main(void) {
     md_travail()[MD_OFF_PHRASES + 5] = (uint8_t)r;
     md_travail()[MD_OFF_PHRASES + 6] = 0x24;
     trace(0, avec);
-    printf("%02X     %-24s %s\n", md_mdcmd_code(r), md_mdcmd_nom(r),
-           strcmp(avec, temoin) ? "agit" : "AUCUN EFFET");
+    printf("%02X     %-24s %s\n", md_mdcmd_code(r), md_mdcmd_nom(r), avec);
   }
   return 0;
 }
