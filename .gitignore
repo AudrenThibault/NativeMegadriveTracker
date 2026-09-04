@@ -50,3 +50,7 @@ source/morceau_demo.h
 release/
 *.mdm
 *.MDM
+
+# Notes de travail : personnelles, pas de la documentation publique.
+LISEZMOI.md
+TRANSFERT.md
