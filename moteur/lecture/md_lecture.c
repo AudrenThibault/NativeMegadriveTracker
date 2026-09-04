@@ -585,9 +585,8 @@ static void note_coupe(int c) {
 // passent par le même chemin, donc ils se comportent pareil par construction.
 // `t` est le numéro du tick DANS LA LIGNE — c'est lui qui donne à l'arpège sa
 // rotation et au retard son échéance.
-static void effet_tick(int c, int slot, int t) {
+static void effet_pas(int c, int e, uint8_t val, int t) {
   voie_t *v = &voies[c];
-  const uint8_t e = v->eff[slot], val = v->effval[slot];
   const uint8_t x = (uint8_t)(val >> 4), y = (uint8_t)(val & 15);
 
   switch (e) {
@@ -679,7 +678,7 @@ static void commande_tick(int c, int t) {
   // Les DEUX emplacements avancent, la lettre puis le code : c'est l'ordre
   // d'affichage, donc celui qu'on lit sur l'écran.
   for (int s = 0; s < 2; s++)
-    if (v->eff[s] != MD_E_RIEN) effet_tick(c, s, t);
+    if (v->eff[s] != MD_E_RIEN) effet_pas(c, v->eff[s], v->effval[s], t);
 }
 
 // ── Les commandes MD ──────────────────────────────────────────────────────
@@ -784,53 +783,64 @@ static void joue(int c) {
 // Les uns agissent TOUT DE SUITE et n'ont rien à dérouler — poser un tempo,
 // un panoramique, un saut. Les autres s'installent dans leur emplacement et
 // tournent tick après tick. C'est la seule différence, et elle se lit ici.
-static void arme_effet(int c, int slot, int effet, uint8_t val) {
+// Rend 1 quand l'effet a agi SUR-LE-CHAMP et n'a rien à dérouler ensuite.
+static int effet_immediat(int c, int effet, uint8_t val) {
   voie_t *v = &voies[c];
-  v->eff[slot] = MD_E_RIEN;
-
   switch (effet) {
     case MD_E_RIEN:
-      return;
+      return 1;
     case MD_E_VITESSE:
       if (val) md_song_pose_vitesse(val);
-      return;
+      return 1;
     case MD_E_TEMPO:
       if (val) md_song_pose_bpm(val);
-      return;
+      return 1;
     case MD_E_VOL_GLOBAL:
       // Le volume général du morceau, 0-15. Il multiplie celui de chaque voie.
       vol_global = (uint8_t)borne(val, 0, 15);
       for (int k = 0; k < 6; k++)
         if (voies[k].actif && voies[k].note) pose_volume(k);
-      return;
+      return 1;
     case MD_E_PAN:
       if (c < 6 && c != MD_PCM_VOIE) {
         const uint8_t ins = v->instr ? v->instr : 1;
         const uint32_t b = MD_OFF_INSTR + (uint32_t)(ins - 1) * MD_INSTR_OCTETS;
         md_fm_pose_pan(c, val, md_lit(b + 46) & 3, md_lit(b + 47) & 7);
       }
-      return;
+      return 1;
     case MD_E_TABLE:
       if (val < MD_MAX_TABLES) { v->table = val; table_remet_a_zero(v); }
-      return;
+      return 1;
     case MD_E_VIB_PROF:
       // W ne fait pas de vibrato : il REGLE la profondeur que V emploiera.
       v->vib_prof = (uint8_t)(val & 15);
-      return;
+      return 1;
     case MD_E_FINE:
       // Un désaccord fin, en seizièmes de demi-ton, centré sur 8.
       v->fin = (int16_t)(((int)(val & 15) - 8) * 16);
       pose_hauteur(c);
-      return;
+      return 1;
     case MD_E_SAUT:
       // On demande le saut ; il se fera à la fin de la ligne, pas au milieu.
       saut_vise = val; saut_demande = 1;
-      return;
+      return 1;
     case MD_E_RUPTURE:
       // La ligne de SONG suivante, en commençant à la ligne demandée.
       rupture_ligne = (uint8_t)(val & (MD_LIGNES_PHRASE - 1));
       rupture_demandee = 1;
-      return;
+      return 1;
+    default:
+      break;
+  }
+  return 0;
+}
+
+static void arme_effet(int c, int slot, int effet, uint8_t val) {
+  voie_t *v = &voies[c];
+  v->eff[slot] = MD_E_RIEN;
+  if (effet_immediat(c, effet, val)) return;
+
+  switch (effet) {
     case MD_E_COUPE:
       v->coupe = val ? val : 1;
       break;
@@ -1123,7 +1133,53 @@ static void macro_pas(int c) {
 // VOL remplace le volume de la voie, TSP transpose la note. Zéro veut dire
 // « ne touche à rien » pour les deux — c'est le neutre du format, et c'est ce
 // qui permet à une table de ne régler QUE ce qui l'intéresse.
-static void table_pas(int c) {
+static int  effet_immediat(int c, int effet, uint8_t val);
+static void effet_pas(int c, int e, uint8_t val, int t);
+static void commande_md(int c, uint8_t rang, uint8_t val);
+
+// ── LES COMMANDES D'UNE TABLE ─────────────────────────────────────────────
+// ⚠️ ELLES N'ÉTAIENT PAS LUES DU TOUT. Une table n'appliquait que VOL et TSP :
+// poser un P ou un V dans sa colonne CMD ne faisait rien, et rien ne le
+// disait. Elles passent maintenant par le MÊME moteur d'effets que les lignes
+// de phrase — une seule implémentation par effet, donc le même P des deux
+// côtés.
+//
+// Une table avance d'une ligne par tick : chaque tick apporte donc une
+// commande neuve. On l'applique directement, sans l'armer dans un
+// emplacement — l'armer la remettrait à zéro à chaque tick, et un vibrato
+// n'aurait jamais le temps de tourner.
+//
+// H et D ne passent pas par là : le premier déplace une position, et
+// hop_resout s'en charge ; le second n'a pas de sens sur une table, qui n'a
+// pas de ligne à retarder.
+static void table_cmds(int c, int t) {
+  voie_t *v = &voies[c];
+  if (v->table >= MD_MAX_TABLES) return;
+
+  for (int s = 1; s <= 2; s++) {
+    const uint32_t b = table_base(v->table, v->table_pas[s]);
+    const uint8_t cmd = md_lit(b + (uint32_t)(s == 1 ? 2 : 4));
+    const uint8_t val = md_lit(b + (uint32_t)(s == 1 ? 3 : 5));
+    if (cmd == MD_VIDE) continue;
+    const int e = md_cmd_effet(cmd);
+    if (e == MD_E_RIEN || e == MD_E_HOP || e == MD_E_RETARD) continue;
+    if (!effet_immediat(c, e, val)) effet_pas(c, e, val, t);
+  }
+
+  // La colonne MD voyage avec le second flux, comme sur la DS : c'est un
+  // réglage ponctuel, il n'a pas besoin d'un flux à lui.
+  { const uint32_t b = table_base(v->table, v->table_pas[2]);
+    const uint8_t md = md_lit(b + 6), mv = md_lit(b + 7);
+    if (md != MD_VIDE) {
+      commande_md(c, md, mv);              // les écritures de registre
+      const int e = md_mdcmd_effet(md);    // et les effets de séquence
+      if (e != MD_E_RIEN && e != MD_E_RETARD
+          && !effet_immediat(c, e, mv)) effet_pas(c, e, mv, t);
+    }
+  }
+}
+
+static void table_pas(int c, int t) {
   voie_t *v = &voies[c];
   if (!v->note) return;
   // ⚠️ On ne sort plus quand il n'y a pas de table : les macros PSG, elles,
@@ -1173,12 +1229,23 @@ static void table_pas(int c) {
                           * MD_INSTR_OCTETS + 52) & 7);
       md_psg_bruit(grain, (uint8_t)n, niveau);
     }
-    else        md_psg_note_on(c - 6, (uint8_t)n, niveau);
+    else {
+      md_psg_note_on(c - 6, (uint8_t)n, niveau);
+      // Même raison que pour la FM : le désaccord doit survivre au réaccord
+      // de la table.
+      if (v->fin) md_psg_hauteur(c - 6, n, v->fin);
+    }
   } else if (c != MD_PCM_VOIE) {
     // ⚠️ On repose la FRÉQUENCE seulement, pas la voix entière : recharger
     // l'instrument relancerait l'attaque à chaque tick, et on n'entendrait
     // qu'un grésillement.
-    md_fm_frequence(c, (uint8_t)n);
+    //
+    // ⚠️ ET AVEC LE DÉSACCORD EN COURS. Sans lui, cette écriture-ci EFFAÇAIT
+    // à chaque tick ce qu'un vibrato ou un pitch bend venait de poser : la
+    // commande agissait, on la voyait passer, et la table la reprenait
+    // aussitôt. Un instrument qui a une table rendait donc toutes les
+    // commandes de hauteur inaudibles.
+    md_fm_hauteur(c, n, v->fin);
   }
 
   // ⚠️ ON AVANCE, PUIS ON RÉSOUT LES SAUTS TOUT DE SUITE — pas au tick
@@ -1186,6 +1253,10 @@ static void table_pas(int c) {
   // laisser se poser sur la ligne du H faisait descendre le repère jusqu'à
   // lui avant de remonter, alors que cette ligne n'est jamais jouée. Ce qu'on
   // entendait était juste, ce qu'on voyait ne l'était pas.
+  // Les commandes de la table s'appliquent sur la ligne QU'ON VIENT DE LIRE,
+  // avant d'avancer : sinon elles porteraient sur la suivante.
+  if (a_table) table_cmds(c, t);
+
   if (a_table)
     for (int s = 0; s < 3; s++) {
       v->table_pas[s] = (uint8_t)((v->table_pas[s] + 1) & (MD_LIGNES_TABLE - 1));
@@ -1242,7 +1313,7 @@ void md_lecture_tick(void) {
     // La table avance à CHAQUE tick, la phrase seulement toutes les
     // `vitesse` — c'est toute la raison d'être d'une table.
     for (int c = 0; c < MD_CANAUX; c++)
-      if (voies[c].actif && !md_lecture_muette(c)) table_pas(c);
+      if (voies[c].actif && !md_lecture_muette(c)) table_pas(c, ticks);
     // Les commandes tournent au même rythme que les tables — un pas par tick.
     for (int c = 0; c < MD_CANAUX; c++)
       if (voies[c].actif && !md_lecture_muette(c)) commande_tick(c, ticks);

@@ -133,7 +133,32 @@ int main(void) {
       m[b + 0] = 80; m[b + 1] = 1; m[b + 2] = MD_VIDE; }
     m[MD_OFF_PHRASES + 3] = (uint8_t)rang_de('N'); m[MD_OFF_PHRASES + 4] = 0x00;
     trace(0, avec);
-    printf("  N00 — la note 80 de la phrase suivante doit arriver\n    %s\n", avec);
+    printf("  N00 — la note 80 de la phrase suivante doit arriver\n    %s\n\n", avec);
+
+    // ── LES MEMES COMMANDES, MAIS DANS UNE TABLE ──────────────────────
+    // Une table avance d'une ligne par TICK : la commande posee sur sa
+    // ligne 3 n'agit qu'au quatrieme tick, puis a chaque tour.
+    pose_morceau(0); m = md_travail();
+    m[MD_OFF_INSTR + 59] = 0;                      // instrument 01 -> table 00
+    for (int l = 0; l < MD_LIGNES_TABLE; l++) {
+      const uint32_t b = MD_OFF_TABLES + (uint32_t)l * MD_TABLE_OCTETS;
+      m[b + 2] = MD_VIDE; m[b + 4] = MD_VIDE; m[b + 6] = MD_VIDE;
+    }
+    { const uint32_t b = MD_OFF_TABLES + 3 * MD_TABLE_OCTETS;
+      m[b + 2] = (uint8_t)rang_de('P'); m[b + 3] = 0x51; }
+    trace(0, avec);
+    printf("  P51 dans la TABLE, ligne 3\n    %s\n\n", avec);
+
+    pose_morceau(0); m = md_travail();
+    m[MD_OFF_INSTR + 59] = 0;
+    for (int l = 0; l < MD_LIGNES_TABLE; l++) {
+      const uint32_t b = MD_OFF_TABLES + (uint32_t)l * MD_TABLE_OCTETS;
+      m[b + 2] = MD_VIDE; m[b + 4] = MD_VIDE; m[b + 6] = MD_VIDE;
+    }
+    { const uint32_t b = MD_OFF_TABLES + 2 * MD_TABLE_OCTETS;
+      m[b + 4] = (uint8_t)rang_de('V'); m[b + 5] = 0x44; }
+    trace(0, avec);
+    printf("  V44 dans la TABLE, seconde colonne CMD\n    %s\n", avec);
   }
   return 0;
 }

@@ -1167,7 +1167,7 @@ static const char *APROPOS[] = {
   "COPYRIGHT (C) 2026 AUDREN THIBAULT",
   "",
   "GITHUB.COM/AUDRENTHIBAULT/",
-  "  NATIVEMEGADRIVETRACKER",
+  "  GENETRACKERMD",
   "",
   "THIS PROGRAM COMES WITH ABSOLUTELY",
   "NO WARRANTY. IT IS FREE SOFTWARE",
@@ -1186,11 +1186,20 @@ static const char *APROPOS[] = {
 
 static void apropos_dessine(void) {
   md_ecran_texte(0, 0, MD_TITRE, "ABOUT");
-  for (int i = 0; i < (int)(sizeof(APROPOS) / sizeof(APROPOS[0])); i++)
+  const int n = (int)(sizeof(APROPOS) / sizeof(APROPOS[0]));
+  for (int i = 0; i < n; i++)
     md_ecran_texte(2, 3 + i,
                    (i == 0) ? MD_ACCENT : (i == 4 || i == 6 || i == 7)
                               ? MD_TITRE : MD_DATA,
                    APROPOS[i]);
+  // ⚠️ QUELLE ROM EST-CE ? La somme de contrôle de l'en-tête change à chaque
+  // compilation. On a perdu des heures à chercher des défauts dans du code
+  // déjà réparé parce qu'une ROM périmée était à l'essai — et l'horodatage du
+  // Finder ne suit pas toujours. Ce nombre-là, lui, vient de la ROM en train
+  // de tourner : il suffit de le comparer à celui que la compilation annonce.
+  md_ecran_texte(2, 3 + n + 1, MD_DATA, "BUILD");
+  md_ecran_hex(9, 3 + n + 1, MD_ACCENT,
+               *(volatile uint16_t *)0x18E, 4);
 }
 
 static void fichier_dessine(void) {
