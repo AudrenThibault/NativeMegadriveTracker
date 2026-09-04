@@ -134,10 +134,10 @@ One prerequisite:
 brew install m68k-elf-gcc
 ```
 
-Then, to build a ROM carrying a song:
+Then, to build a ROM carrying a song — give it your own `.mdm`:
 
 ```sh
-python3 outils/bibliotheque.py verser morceaux/TUTU.MDM
+python3 outils/bibliotheque.py verser MYSONG.MDM
 ```
 
 That rebuilds the sample bank, compiles the ROM, and drops it on the
@@ -145,12 +145,17 @@ EverDrive's SD card if it is mounted. `./build.sh` on its own compiles without
 changing the embedded song — useful to check that it still builds, not to test
 a song.
 
-For the **bare ROM**, the one that gets published — the tracker alone, with no
-song and no samples:
+For the **bare ROM**, the one that gets published — the tracker with no song,
+but **with a sample bank**:
 
 ```sh
-python3 outils/bibliotheque.py vierge
+python3 outils/bibliotheque.py vierge MYSONG.MDM
 ```
+
+The `.mdm` is there only for its samples; its song is never carried over. A
+tracker that opens on an empty bank cannot make the PCM voice do anything until
+a computer is plugged in — the channel stays silent and it reads as a fault
+rather than as an empty bank. Pass no `.mdm` and you get exactly that.
 
 It opens on an empty project and saves into the cartridge's sixteen slots like
 any other build: saves live in FRAM, not in the ROM.
